@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>许小熊 - 使用仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+background: #f5f5f5;
+color: #333;
+padding: 20px;
+}
+.header {
+background: #ff9aa2;
+color: #333;
+padding: 20px 24px;
+border-radius: 16px;
+margin-bottom: 20px;
+}
+.header h1 { font-size: 22px; }
+.header p { font-size: 14px; opacity: 0.7; margin-top: 4px; }
+.stats-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+gap: 12px;
+margin-bottom: 20px;
+}
+.stat-card {
+background: white;
+border-radius: 12px;
+padding: 16px;
+text-align: center;
+box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.stat-card .number {
+font-size: 28px;
+font-weight: 700;
+color: #ff9aa2;
+}
+.stat-card .label {
+font-size: 13px;
+color: #999;
+margin-top: 4px;
+}
+.chart-row {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 16px;
+margin-bottom: 20px;
+}
+.chart-card {
+background: white;
+border-radius: 12px;
+padding: 20px;
+box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.chart-card h3 {
+font-size: 15px;
+color: #666;
+margin-bottom: 12px;
+}
+.chart-card canvas { max-height: 220px; }
+.topic-card {
+background: white;
+border-radius: 12px;
+padding: 20px;
+box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.topic-card h3 {
+font-size: 15px;
+color: #666;
+margin-bottom: 12px;
+}
+.tags {
+display: flex;
+flex-wrap: wrap;
+gap: 8px;
+}
+.tag {
+display: inline-block;
+padding: 6px 14px;
+border-radius: 20px;
+font-size: 13px;
+font-weight: 500;
+}
+.tag-1 { background: #ff9aa2; color: #fff; font-size: 18px; }
+.tag-2 { background: #ffb3b8; color: #fff; font-size: 16px; }
+.tag-3 { background: #ffccd0; color: #555; font-size: 14px; }
+.tag-4 { background: #ffe5e7; color: #666; font-size: 13px; }
+.tag-5 { background: #f0f0f0; color: #888; font-size: 12px; }
+.footer {
+text-align: center;
+color: #bbb;
+font-size: 12px;
+margin-top: 30px;
+padding: 12px;
+}
+@media (max-width: 600px) {
+.chart-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+<h1>🧸 许小熊使用情况</h1>
+<p>了解使用情况，但看不到具体聊了什么 &#xb7; 数据仅保留最近30天</p>
+</div>
+
+<div class="stats-grid">
+<div class="stat-card">
+<div class="number" id="totalDays">-</div>
+<div class="label">使用天数</div>
+</div>
+<div class="stat-card">
+<div class="number" id="totalMsgs">-</div>
+<div class="label">总消息数</div>
+</div>
+<div class="stat-card">
+<div class="number" id="avgDaily">-</div>
+<div class="label">日均消息</div>
+</div>
+<div class="stat-card">
+<div class="number" id="lastActive">-</div>
+<div class="label">最近活跃</div>
+</div>
+</div>
+
+<div class="chart-row">
+<div class="chart-card">
+<h3>📈 每日使用频率（最近14天）</h3>
+<canvas id="freqChart"></canvas>
+</div>
+<div class="chart-card">
+<h3>😊 情绪分布</h3>
+<canvas id="emotionChart"></canvas>
+</div>
+</div>
+
+<div class="topic-card">
+<h3>🏷️ 热门话题</h3>
+<div class="tags" id="topicTags"></div>
+</div>
+
+<div class="footer">
+许小熊 &#xb7; 仅统计不保存原文 &#xb7; 隐私安全
+</div>
+
+<script>
+async function loadDashboard() {
+    try {
+        const res = await fetch("/api/stats?days=30");
+        const rows = await res.json();
+        if (rows.error) {
+            document.querySelector(".header p").textContent = "数据加载失败: " + rows.error;
+            return;
+        }
+        const processed = processSupabaseData(rows);
+        renderStats(processed.summary);
+        renderFreqChart(processed.frequency);
+        renderEmotionChart(processed.emotion);
+        renderTopics(processed.topics);
+    } catch (err) {
+        console.error("加载失败:", err);
+        document.querySelector(".header p").textContent = "无法连接到服务器";
+    }
+}
+
+function processSupabaseData(rows) {
+    if (!rows || rows.length === 0) {
+        return { summary: { total_sessions: 0, total_messages: 0, last_active: null }, frequency: [], emotion: { positive: 0, neutral: 0, negative: 0 }, topics: [] };
+    }
+    const frequency = rows.map(r => ({ date: r.date, count: r.total_messages || 0 }));
+    const total_messages = rows.reduce((s, r) => s + (r.total_messages || 0), 0);
+    const total_positive = rows.reduce((s, r) => s + (r.sentiment_positive || 0), 0);
+    const total_neutral = rows.reduce((s, r) => s + (r.sentiment_neutral || 0), 0);
+    const total_negative = rows.reduce((s, r) => s + (r.sentiment_negative || 0), 0);
+    const total_emo = total_positive + total_neutral + total_negative;
+    const emotion = total_emo > 0
+        ? { positive: Math.round(total_positive / total_emo * 100), neutral: Math.round(total_neutral / total_emo * 100), negative: Math.round(total_negative / total_emo * 100) }
+        : { positive: 0, neutral: 0, negative: 0 };
+    const topicCount = {};
+    rows.forEach(r => {
+        if (r.topics && typeof r.topics === "object") {
+            Object.entries(r.topics).forEach(([k, v]) => { topicCount[k] = (topicCount[k] || 0) + v; });
+        }
+    });
+    const topics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+    return {
+        summary: { total_sessions: rows.length, total_messages, last_active: rows[rows.length - 1]?.date || null },
+        frequency, emotion, topics
+    };
+}
+
+function renderStats(summary) {
+document.getElementById("totalDays").textContent = summary.total_sessions || 0;
+document.getElementById("totalMsgs").textContent = summary.total_messages || 0;
+document.getElementById("avgDaily").textContent =
+summary.total_sessions > 0
+? Math.round(summary.total_messages / summary.total_sessions)
+: 0;
+document.getElementById("lastActive").textContent = summary.last_active || "-";
+}
+
+function renderFreqChart(freqData) {
+const ctx = document.getElementById("freqChart").getContext("2d");
+const labels = freqData.map(d => d.date.slice(5));
+const counts = freqData.map(d => d.count);
+new Chart(ctx, {
+type: "bar",
+data: {
+labels: labels,
+datasets: [{
+label: "消息数",
+data: counts,
+backgroundColor: "#ff9aa2",
+borderRadius: 6,
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: { legend: { display: false } },
+scales: {
+y: { beginAtZero: true, ticks: { stepSize: 1 } },
+x: { grid: { display: false } }
+}
+}
+});
+}
+
+function renderEmotionChart(emotion) {
+const ctx = document.getElementById("emotionChart").getContext("2d");
+new Chart(ctx, {
+type: "doughnut",
+data: {
+labels: ["正面 (+)", "中性", "负面 (-)"],
+datasets: [{
+data: [emotion.positive, emotion.neutral, emotion.negative],
+backgroundColor: ["#ff9aa2", "#d4d4d4", "#a0a0a0"],
+borderWidth: 0,
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+legend: {
+position: "bottom",
+labels: { padding: 16, usePointStyle: true }
+}
+}
+}
+});
+}
+
+function renderTopics(topics) {
+const container = document.getElementById("topicTags");
+if (!topics || topics.length === 0) {
+container.innerHTML = "<span style='color:#ccc'>暂无数据</span>";
+return;
+}
+const maxCount = Math.max(...topics.map(t => t.count));
+container.innerHTML = topics.map(t => {
+const ratio = t.count / maxCount;
+let level;
+if (ratio > 0.6) level = 1;
+else if (ratio > 0.4) level = 2;
+else if (ratio > 0.25) level = 3;
+else if (ratio > 0.1) level = 4;
+else level = 5;
+return `<span class="tag tag-${level}">${t.name} (${t.count})</span>`;
+}).join("");
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
