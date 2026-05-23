@@ -4,6 +4,7 @@
 双击打开就能聊 OvO
 """
 
+import json
 import logging
 import uuid
 import sys
