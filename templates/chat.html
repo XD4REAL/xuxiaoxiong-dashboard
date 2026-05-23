@@ -335,7 +335,6 @@ wrap.className = 'bubble-wrap';
 const bubble = document.createElement('div');
 bubble.className = 'bubble';
 bubble.textContent = content;
-// 许小熊的消息带一个未读粉点
 if (role === 'bot') {
 const dot = document.createElement('span');
 dot.className = 'unread-dot';
@@ -354,27 +353,79 @@ chatBox.scrollTop = chatBox.scrollHeight;
 }
 function showLoading() { loading.style.display = 'flex'; chatBox.scrollTop = chatBox.scrollHeight; }
 function hideLoading() { loading.style.display = 'none'; }
+function createBotBubble() {
+if (welcomeMsg.style.display !== 'none') welcomeMsg.style.display = 'none';
+addTimeStamp(getTimeStr());
+const div = document.createElement('div');
+div.className = 'message bot';
+const avatar = document.createElement('img');
+avatar.className = 'msg-avatar';
+avatar.src = "{{ url_for('static', filename='avatar.jpg') }}";
+avatar.onerror = function() {
+this.src = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E🧸%3C/text%3E%3C/svg%3E";
+};
+const wrap = document.createElement('div');
+wrap.className = 'bubble-wrap';
+const bubble = document.createElement('div');
+bubble.className = 'bubble';
+wrap.appendChild(bubble);
+div.appendChild(avatar);
+div.appendChild(wrap);
+chatBox.appendChild(div);
+return bubble;
+}
 async function sendMessage() {
 const text = userInput.value.trim();
 if (!text) return;
 userInput.value = '';
 userInput.style.height = 'auto';
 addMessage(text, 'user');
-showLoading();
 sendBtn.disabled = true;
+let bubble = null;
 try {
-const res = await fetch('/chat', {
+const res = await fetch('/chat/stream', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ message: text })
 });
-const data = await res.json();
-hideLoading();
-if (data.reply) addMessage(data.reply, 'bot');
+if (!res.ok) throw new Error('status ' + res.status);
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+while (true) {
+const { done, value } = await reader.read();
+if (done) break;
+buffer += decoder.decode(value, { stream: true });
+const lines = buffer.split('\n');
+buffer = lines.pop() || '';
+for (const line of lines) {
+if (!line.startsWith('data: ')) continue;
+try {
+const payload = JSON.parse(line.slice(6));
+if (payload.chunk) {
+if (!bubble) bubble = createBotBubble();
+bubble.textContent += payload.chunk;
+chatBox.scrollTop = chatBox.scrollHeight;
+}
+if (payload.done && bubble) {
+const dot = document.createElement('span');
+dot.className = 'unread-dot';
+bubble.appendChild(dot);
+}
+if (payload.error) {
+if (!bubble) bubble = createBotBubble();
+bubble.textContent = payload.error;
+}
+} catch (e) {}
+}
+}
 } catch (err) {
+if (!bubble) {
 hideLoading();
 addMessage('抱歉呀，小熊刚才卡住了，你再说一遍好不好 OvO', 'bot');
+}
 } finally {
+hideLoading();
 sendBtn.disabled = false;
 userInput.focus();
 }

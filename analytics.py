@@ -147,44 +147,51 @@ def _analyze_with_deepseek(text: str) -> dict:
     }
 
 
-def record_message(user_id: str, role: str, content: str):
+def record_message(user_id: str, role: str, content: str, analysis: dict | None = None):
     """
     记录一条消息的统计数据（不保存原文）
-    只在记录用户消息时统计情绪和话题
+    只在记录用户消息时统计情绪和话题。如果提供了 analysis 则直接使用，省去 API 调用。
     """
     if role != "user":
         return
-    
+
     data = _load()
     today_str = date.today().isoformat()
     now_str = datetime.now().strftime("%H:%M")
-    
+
     # 确保用户存在
     if user_id not in data["users"]:
         data["users"][user_id] = {"sessions": []}
-    
+
     user_data = data["users"][user_id]
-    
+
     # 找到今天的会话，没有则创建
     today_session = None
     for s in user_data["sessions"]:
         if s["date"] == today_str:
             today_session = s
             break
-    
+
     if today_session is None:
         today_session = {"date": today_str, "count": 0, "messages": []}
         user_data["sessions"].append(today_session)
-    
-    # 记录（优先用 DeepSeek 语义分析）
-    analysis = _analyze_with_deepseek(content)
+
+    # 记录（优先使用内联分析，否则调用 DeepSeek）
+    if analysis:
+        result = {
+            "emotion": analysis["emotion"],
+            "topics": analysis["topics"],
+        }
+    else:
+        result = _analyze_with_deepseek(content)
+
     today_session["count"] += 1
     today_session["messages"].append({
         "time": now_str,
-        "emotion": analysis["emotion"],
-        "topics": analysis["topics"],
+        "emotion": result["emotion"],
+        "topics": result["topics"],
     })
-    
+
     _save(data)
 
 

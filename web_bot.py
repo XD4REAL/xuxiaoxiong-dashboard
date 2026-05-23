@@ -11,9 +11,9 @@ import os
 import webbrowser
 import threading
 import time
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
 from config import SECRET_KEY
-from llm_client import chat, assess_confidence
+from llm_client import chat, chat_stream, assess_confidence
 from alerts import save_alert, get_alerts, mark_read, mark_all_read, get_unread_count
 from email_notifier import send_alert_email
 from memory import load_history, add_message, cleanup_old_histories
@@ -43,6 +43,29 @@ cleanup_old_sessions(days=30)
 ALERT_COOLDOWN = 300
 _last_alert_time = {}
 
+# 限流：每 IP 每分钟最多 20 条消息
+RATE_LIMIT = 20
+_rate_records = {}
+
+
+def _rate_limit_check(ip: str) -> bool:
+    """检查 IP 是否超限。返回 True 表示被限流。"""
+    now = time.time()
+    if ip not in _rate_records:
+        _rate_records[ip] = []
+    timestamps = _rate_records[ip]
+    # 清除 60 秒前的记录
+    cutoff = now - 60
+    _rate_records[ip] = [t for t in timestamps if t > cutoff]
+    if len(_rate_records[ip]) >= RATE_LIMIT:
+        return True
+    _rate_records[ip].append(now)
+
+    # 定期清理过期 IP
+    if len(_rate_records) > 500:
+        _rate_records.clear()
+    return False
+
 
 @app.route("/")
 def index():
@@ -57,6 +80,9 @@ def chat_api():
     if not user_message:
         return jsonify({"reply": "嗯？你说什么呀 OvO"})
 
+    if _rate_limit_check(request.remote_addr):
+        return jsonify({"reply": "小熊聊累了，休息一下嘛~ OvO"}), 429
+
     session["user_id"] = "xiaodou"
     user_id = session["user_id"]
 
@@ -66,13 +92,13 @@ def chat_api():
         detect_and_save_corrections(user_message)
 
         history = load_history(user_id)
-        reply = chat(history, user_message)
+        reply, analysis = chat(history, user_message)
         add_message(user_id, "user", user_message)
         add_message(user_id, "assistant", reply)
-        record_message(user_id, "user", user_message)
+        record_message(user_id, "user", user_message, analysis=analysis)
 
         # 求助检测（必须在 upload_stats 之前，避免编码异常阻断）
-        _check_and_alert(user_id, user_message, reply)
+        _check_and_alert(user_id, user_message, reply, analysis=analysis)
 
         # 上传统计数据到 Supabase
         stats = get_daily_stats(user_id)
@@ -82,6 +108,54 @@ def chat_api():
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         return jsonify({"reply": "抱歉呀，小熊刚才卡住了 OvO\n可能是网不好，你再说一遍好不好？"})
+
+
+@app.route("/chat/stream", methods=["POST"])
+def chat_stream_api():
+    """流式聊天端点（SSE）"""
+    data = request.get_json()
+    user_message = data.get("message", "").strip()
+
+    if not user_message:
+        return jsonify({"error": "empty message"}), 400
+
+    if _rate_limit_check(request.remote_addr):
+        return jsonify({"reply": "小熊聊累了，休息一下嘛~ OvO"}), 429
+
+    session["user_id"] = "xiaodou"
+    user_id = session["user_id"]
+
+    def generate():
+        try:
+            from learned_memory import detect_and_save_corrections
+            detect_and_save_corrections(user_message)
+
+            history = load_history(user_id)
+            add_message(user_id, "user", user_message)
+
+            reply_parts = []
+            for chunk, is_done, analysis in chat_stream(history, user_message):
+                if chunk:
+                    reply_parts.append(chunk)
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                if is_done:
+                    full_reply = "".join(reply_parts)
+                    add_message(user_id, "assistant", full_reply)
+                    record_message(user_id, "user", user_message, analysis=analysis)
+                    _check_and_alert(user_id, user_message, full_reply, analysis=analysis)
+                    stats = get_daily_stats(user_id)
+                    upload_stats(stats)
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': '小熊卡住了，再试试吧 OvO'})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @app.route("/remember", methods=["POST"])
 def remember():
@@ -200,7 +274,7 @@ def alerts_count_api():
 import time as _time_module
 
 
-def _check_and_alert(user_id, user_message, reply):
+def _check_and_alert(user_id, user_message, reply, analysis=None):
     """检测是否需要触发求助"""
     triggered = False
     alert_type = None
@@ -213,7 +287,10 @@ def _check_and_alert(user_id, user_message, reply):
 
     # 2. 回答信心检测（仅当未触发负面情绪时）
     if not triggered:
-        if assess_confidence(reply, user_message):
+        if analysis and analysis.get("confidence") == "low":
+            alert_type = "low_confidence"
+            triggered = True
+        elif not analysis and assess_confidence(reply, user_message):
             alert_type = "low_confidence"
             triggered = True
 

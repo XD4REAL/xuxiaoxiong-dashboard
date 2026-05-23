@@ -1,6 +1,8 @@
 
 """DeepSeek API 调用模块"""
 
+import json
+import re
 import requests
 from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL
 from persona import SYSTEM_PROMPT, EXTENDED_KNOWLEDGE, get_today_info
@@ -50,6 +52,14 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
             knowledge_section += "\n"
         system_content += knowledge_section
 
+    # 附加分析任务指令（模型会在回复末尾输出结构化分析，程序自动移除）
+    analysis_instruction = (
+        "\n\n【分析任务】每条回复结尾附加一行JSON："
+        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}}'
+        "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
+    )
+    system_content += analysis_instruction
+
     # 构建消息列表
     messages = [{"role": "system", "content": system_content}]
 
@@ -63,11 +73,91 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     return messages
 
 
-def chat(history: list[dict], user_message: str) -> str:
-    """调用 DeepSeek API 生成回复"""
+def _post_with_retry(url, headers, json, timeout, max_retries=1):
+    """带重试的 POST 请求，超时/5xx/连接错误时重试一次"""
+    for attempt in range(max_retries + 1):
+        resp = requests.post(url, headers=headers, json=json, timeout=timeout)
+        if resp.status_code < 500:
+            return resp
+        if attempt < max_retries:
+            import time
+            time.sleep(1)
+    return resp
+
+
+def _parse_analysis(raw: str) -> tuple[str, dict | None]:
+    """从回复文本中提取分析数据，返回 (纯净回复, 分析dict或None)"""
+    m = re.search(r'\{"_a":\{[^}]+\}\}', raw)
+    if not m:
+        return raw, None
+    full_reply = raw[:m.start()] + raw[m.end():]
+    full_reply = full_reply.strip()
+    try:
+        a = json.loads(m.group())
+        inner = a["_a"]
+        analysis = {
+            "emotion": inner.get("e", "neutral"),
+            "confidence": inner.get("c", "high"),
+            "topics": inner.get("t", ["日常"]),
+        }
+        if analysis["emotion"] not in ("positive", "neutral", "negative"):
+            analysis["emotion"] = "neutral"
+        if analysis["confidence"] not in ("high", "low"):
+            analysis["confidence"] = "high"
+        if not isinstance(analysis["topics"], list):
+            analysis["topics"] = ["日常"]
+        return full_reply, analysis
+    except Exception:
+        pass
+    return raw, None
+
+
+def chat_stream(history: list[dict], user_message: str):
+    """流式生成回复，逐块 yield (chunk_text, is_done, analysis_dict_or_none)"""
     messages = build_messages(history, user_message)
 
     resp = requests.post(
+        f"{DEEPSEEK_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+        json={
+            "model": DEEPSEEK_MODEL,
+            "messages": messages,
+            "temperature": 0.8,
+            "max_tokens": 512,
+            "top_p": 0.95,
+            "stream": True,
+        },
+        timeout=30,
+        stream=True,
+    )
+
+    full_text = ""
+    for line in resp.iter_lines(decode_unicode=True):
+        if not line or not line.startswith("data: "):
+            continue
+        data_str = line[6:]
+        if data_str.strip() == "[DONE]":
+            break
+        try:
+            data = json.loads(data_str)
+            delta = data["choices"][0]["delta"]
+            content = delta.get("content", "")
+            if content:
+                full_text += content
+                yield content, False, None
+        except Exception:
+            continue
+
+    reply, analysis = _parse_analysis(full_text)
+    # 如果分析行尚未完全到达、被解析截断，直接回车不返回分析
+    yield "", True, analysis
+
+
+def chat(history: list[dict], user_message: str) -> tuple[str, dict | None]:
+    """调用 DeepSeek API 生成回复，返回 (回复文本, 分析数据或None)"""
+    messages = build_messages(history, user_message)
+
+    resp = _post_with_retry(
         f"{DEEPSEEK_BASE_URL}/chat/completions",
         headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
         json={
@@ -80,7 +170,8 @@ def chat(history: list[dict], user_message: str) -> str:
         timeout=30,
     )
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    raw = data["choices"][0]["message"]["content"]
+    return _parse_analysis(raw)
 
 
 UNCERTAIN_KEYWORDS = [
@@ -112,7 +203,7 @@ def _llm_confidence_check(reply: str, user_message: str) -> bool:
             "如果回复清晰明确地回答了问题，回答\"有把握\"。"
             "只回答这两个词之一。"
         )
-        resp = requests.post(
+        resp = _post_with_retry(
             f"{DEEPSEEK_BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
             json={
