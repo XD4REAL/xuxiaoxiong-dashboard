@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .env
 venv/
+chat_histories/
+alerts.json
+analytics_data.json
+learned_memory.json
+*.zip

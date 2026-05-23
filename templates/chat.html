@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>许小熊</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+background: #ededed;
+height: 100vh;
+display: flex;
+flex-direction: column;
+overflow: hidden;
+}
+/* ========== 顶部栏（微信风格） ========== */
+.header {
+background: #ff9aa2;
+padding: 12px 16px;
+display: flex;
+align-items: center;
+gap: 12px;
+position: sticky;
+top: 0;
+z-index: 100;
+box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+}
+.header-back {
+font-size: 22px;
+color: #333;
+cursor: default;
+width: 28px;
+text-align: center;
+}
+.header-avatar {
+width: 40px;
+height: 40px;
+border-radius: 6px;
+object-fit: cover;
+border: 2px solid rgba(255,255,255,0.6);
+}
+.header-info { flex: 1; }
+.header-info h1 {
+font-size: 17px;
+font-weight: 600;
+color: #222;
+}
+.header-info p {
+font-size: 12px;
+color: #666;
+margin-top: 2px;
+}
+.header-more {
+font-size: 22px;
+color: #333;
+width: 32px;
+text-align: center;
+}
+/* ========== 聊天区域 ========== */
+.chat-box {
+flex: 1;
+overflow-y: auto;
+padding: 16px 20px 20px;
+display: flex;
+flex-direction: column;
+gap: 4px;
+background: #ededed;
+}
+.chat-box::-webkit-scrollbar { width: 4px; }
+.chat-box::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+/* ========== 时间戳 ========== */
+.msg-time {
+text-align: center;
+font-size: 11px;
+color: #999;
+margin: 8px 0;
+}
+.msg-time span {
+background: #d6d6d6;
+padding: 2px 10px;
+border-radius: 4px;
+color: #fff;
+font-size: 11px;
+display: inline-block;
+}
+/* ========== 消息行 ========== */
+.message {
+display: flex;
+align-items: flex-end;
+gap: 8px;
+max-width: 88%;
+animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+from { opacity: 0; transform: translateY(6px); }
+to   { opacity: 1; transform: translateY(0); }
+}
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+.message.bot  { align-self: flex-start; }
+/* ========== 头像 ========== */
+.msg-avatar {
+width: 36px;
+height: 36px;
+border-radius: 4px;
+object-fit: cover;
+flex-shrink: 0;
+}
+/* ========== 气泡包裹层 ========== */
+.bubble-wrap { position: relative; display: flex; flex-direction: column; }
+/* ========== 气泡本体 ========== */
+.bubble {
+padding: 10px 14px;
+border-radius: 8px;
+font-size: 15px;
+line-height: 1.55;
+word-break: break-word;
+position: relative;
+white-space: pre-wrap;
+}
+/* 用户：粉色气泡 */
+.message.user .bubble {
+background: #ff9aa2;
+color: #333;
+border-top-right-radius: 2px;
+box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+/* 许小熊：白色气泡 */
+.message.bot .bubble {
+background: #fff;
+color: #333;
+border-top-left-radius: 2px;
+box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+/* ========== 气泡小尾巴 ========== */
+.message.user .bubble::after {
+content: '';
+position: absolute;
+top: 12px;
+right: -6px;
+border: 6px solid transparent;
+border-left-color: #ff9aa2;
+border-right: 0;
+}
+.message.bot .bubble::after {
+content: '';
+position: absolute;
+top: 12px;
+left: -6px;
+border: 6px solid transparent;
+border-right-color: #fff;
+border-left: 0;
+}
+/* ========== 未读粉点（仅许小熊的消息） ========== */
+.unread-dot {
+display: inline-block;
+width: 6px;
+height: 6px;
+background: #ff4757;
+border-radius: 50%;
+margin-left: 4px;
+vertical-align: middle;
+}
+/* ========== 加载动画 ========== */
+.loading {
+display: none;
+align-self: flex-start;
+align-items: center;
+gap: 4px;
+padding: 12px 16px;
+background: #fff;
+border-radius: 8px;
+border-top-left-radius: 2px;
+box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+.loading .dot {
+width: 8px;
+height: 8px;
+background: #bbb;
+border-radius: 50%;
+animation: wechatBounce 1.4s infinite ease-in-out;
+}
+.loading .dot:nth-child(2) { animation-delay: 0.2s; }
+.loading .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes wechatBounce {
+0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+40% { transform: scale(1); opacity: 1; }
+}
+/* ========== 欢迎语 ========== */
+.welcome {
+text-align: center;
+padding: 50px 20px 20px;
+color: #999;
+font-size: 14px;
+}
+.welcome .bear-icon { font-size: 48px; display: block; margin-bottom: 12px; }
+.welcome h2 {
+font-size: 20px;
+font-weight: 600;
+color: #ff9aa2;
+margin-bottom: 8px;
+}
+.welcome p { font-size: 13px; color: #aaa; line-height: 1.6; }
+/* ========== 输入区域（微信风格底部） ========== */
+.input-area {
+display: flex;
+align-items: flex-end;
+gap: 8px;
+padding: 8px 12px;
+padding-bottom: max(8px, env(safe-area-inset-bottom));
+background: #f7f7f7;
+border-top: 1px solid #ddd;
+position: sticky;
+bottom: 0;
+}
+.input-area .side-btn {
+width: 36px;
+height: 36px;
+border-radius: 50%;
+background: none;
+border: none;
+font-size: 20px;
+cursor: pointer;
+flex-shrink: 0;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #444;
+transition: background 0.2s;
+}
+.input-area .side-btn:active { background: #e0e0e0; }
+.input-area textarea {
+flex: 1;
+border: none;
+outline: none;
+font-size: 16px;
+padding: 8px 12px;
+resize: none;
+max-height: 100px;
+font-family: inherit;
+background: #fff;
+border-radius: 8px;
+border: 1px solid #e0e0e0;
+transition: border-color 0.2s;
+}
+.input-area textarea:focus { border-color: #ff9aa2; }
+.input-area button.send {
+background: #ff9aa2;
+color: white;
+border: none;
+border-radius: 6px;
+padding: 9px 18px;
+font-size: 15px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.2s;
+flex-shrink: 0;
+white-space: nowrap;
+}
+.input-area button.send:active { transform: scale(0.96); background: #e88991; }
+.input-area button.send:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+@media (max-width: 420px) {
+.chat-box { padding: 12px 12px 16px; }
+.message { max-width: 92%; }
+}
+</style>
+</head>
+<body>
+<div class="header">
+<div class="header-back">‹</div>
+<img class="header-avatar"
+src="{{ url_for('static', filename='avatar.jpg') }}"
+alt="小熊"
+onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E🧸%3C/text%3E%3C/svg%3E'">
+<div class="header-info">
+<h1>许小熊</h1>
+<p>ᵒᵛᵉ ᵒⁿˡⁱⁿᵉ 💕</p>
+</div>
+<div class="header-more">⋯</div>
+</div>
+<div class="chat-box" id="chatBox">
+<div class="welcome" id="welcomeMsg">
+<span class="bear-icon">🧸</span>
+<h2>嘿嘿 你来啦 ✨</h2>
+<p>我是许小熊，小多的数字分身~<br>有什么想聊的都可以跟我说哦！</p>
+</div>
+<div class="loading" id="loading">
+<span class="dot"></span>
+<span class="dot"></span>
+<span class="dot"></span>
+</div>
+</div>
+<div class="input-area">
+<button class="side-btn" type="button">🎤</button>
+<textarea id="userInput" rows="1"
+placeholder="输入消息..."
+oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"
+onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+<button class="side-btn" type="button">😊</button>
+<button class="send" id="sendBtn" onclick="sendMessage()">发送</button>
+</div>
+<script>
+const chatBox = document.getElementById('chatBox');
+const userInput = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+const loading = document.getElementById('loading');
+const welcomeMsg = document.getElementById('welcomeMsg');
+function getTimeStr() {
+const d = new Date();
+return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function addTimeStamp(timeStr) {
+const div = document.createElement('div');
+div.className = 'msg-time';
+div.innerHTML = '<span>' + timeStr + '</span>';
+chatBox.appendChild(div);
+}
+function addMessage(content, role) {
+if (welcomeMsg.style.display !== 'none') welcomeMsg.style.display = 'none';
+addTimeStamp(getTimeStr());
+const div = document.createElement('div');
+div.className = 'message ' + role;
+const avatar = document.createElement('img');
+avatar.className = 'msg-avatar';
+if (role === 'bot') {
+avatar.src = "{{ url_for('static', filename='avatar.jpg') }}";
+avatar.onerror = function() {
+this.src = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E🧸%3C/text%3E%3C/svg%3E";
+};
+} else {
+avatar.src = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E😊%3C/text%3E%3C/svg%3E";
+}
+const wrap = document.createElement('div');
+wrap.className = 'bubble-wrap';
+const bubble = document.createElement('div');
+bubble.className = 'bubble';
+bubble.textContent = content;
+// 许小熊的消息带一个未读粉点
+if (role === 'bot') {
+const dot = document.createElement('span');
+dot.className = 'unread-dot';
+bubble.appendChild(dot);
+}
+wrap.appendChild(bubble);
+if (role === 'bot') {
+div.appendChild(avatar);
+div.appendChild(wrap);
+} else {
+div.appendChild(wrap);
+div.appendChild(avatar);
+}
+chatBox.appendChild(div);
+chatBox.scrollTop = chatBox.scrollHeight;
+}
+function showLoading() { loading.style.display = 'flex'; chatBox.scrollTop = chatBox.scrollHeight; }
+function hideLoading() { loading.style.display = 'none'; }
+async function sendMessage() {
+const text = userInput.value.trim();
+if (!text) return;
+userInput.value = '';
+userInput.style.height = 'auto';
+addMessage(text, 'user');
+showLoading();
+sendBtn.disabled = true;
+try {
+const res = await fetch('/chat', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ message: text })
+});
+const data = await res.json();
+hideLoading();
+if (data.reply) addMessage(data.reply, 'bot');
+} catch (err) {
+hideLoading();
+addMessage('抱歉呀，小熊刚才卡住了，你再说一遍好不好 OvO', 'bot');
+} finally {
+sendBtn.disabled = false;
+userInput.focus();
+}
+}
+</script>
+</body>
+</html>

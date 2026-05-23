@@ -91,6 +91,57 @@ font-weight: 500;
 .tag-3 { background: #ffccd0; color: #555; font-size: 14px; }
 .tag-4 { background: #ffe5e7; color: #666; font-size: 13px; }
 .tag-5 { background: #f0f0f0; color: #888; font-size: 12px; }
+.alert-section {
+background: white;
+border-radius: 12px;
+padding: 20px;
+margin-bottom: 20px;
+box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.alert-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 12px;
+}
+.alert-header h3 { font-size: 15px; color: #666; }
+.mark-all-btn {
+background: none;
+border: 1px solid #ddd;
+border-radius: 6px;
+padding: 4px 12px;
+font-size: 12px;
+color: #999;
+cursor: pointer;
+}
+.mark-all-btn:hover { background: #f5f5f5; }
+.alert-item {
+display: flex;
+align-items: flex-start;
+gap: 10px;
+padding: 10px 12px;
+border-radius: 8px;
+margin-bottom: 8px;
+cursor: pointer;
+transition: background 0.15s;
+}
+.alert-item:hover { background: #fafafa; }
+.alert-item.unread { background: #fff5f5; border-left: 3px solid #ff9aa2; }
+.alert-item.read { opacity: 0.65; }
+.alert-badge {
+flex-shrink: 0;
+font-size: 11px;
+padding: 2px 8px;
+border-radius: 10px;
+color: white;
+font-weight: 600;
+}
+.badge-negative { background: #e88b8b; }
+.badge-uncertain { background: #e8b84b; }
+.alert-body { flex: 1; min-width: 0; }
+.alert-time { font-size: 11px; color: #bbb; }
+.alert-msg { font-size: 13px; color: #555; margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alert-reply { font-size: 12px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .footer {
 text-align: center;
 color: #bbb;
@@ -143,6 +194,16 @@ padding: 12px;
 <div class="topic-card">
 <h3>🏷️ 热门话题</h3>
 <div class="tags" id="topicTags"></div>
+</div>
+
+<div class="alert-section">
+<div class="alert-header">
+<h3>🔔 待关注</h3>
+<button class="mark-all-btn" onclick="markAllRead()">全部已读</button>
+</div>
+<div class="alert-list" id="alertList">
+<div style="color:#ccc;text-align:center;padding:20px;">暂无需要关注的求助</div>
+</div>
 </div>
 
 <div class="footer">
@@ -276,7 +337,64 @@ return `<span class="tag tag-${level}">${t.name} (${t.count})</span>`;
 }).join("");
 }
 
+async function loadAlerts() {
+try {
+const res = await fetch("/api/alerts?limit=20");
+const alerts = await res.json();
+renderAlerts(alerts);
+} catch (err) {
+console.error("加载求助失败:", err);
+}
+}
+
+function renderAlerts(alerts) {
+const container = document.getElementById("alertList");
+if (!alerts || alerts.length === 0) {
+container.innerHTML = '<div style="color:#ccc;text-align:center;padding:20px;">暂无需要关注的求助</div>';
+return;
+}
+container.innerHTML = alerts.map(a => {
+const isUnread = !a.read;
+const badgeClass = a.type === "negative_emotion" ? "badge-negative" : "badge-uncertain";
+const badgeText = a.type === "negative_emotion" ? "情绪低落" : "回答困难";
+return `
+<div class="alert-item ${isUnread ? 'unread' : 'read'}" onclick="markRead('${a.id}')">
+<span class="alert-badge ${badgeClass}">${badgeText}</span>
+<div class="alert-body">
+<div class="alert-time">${a.timestamp}</div>
+<div class="alert-msg">小豆说：${escapeHtml(a.trigger_message)}</div>
+<div class="alert-reply">小熊回：${escapeHtml(a.bot_reply)}</div>
+</div>
+</div>`;
+}).join("");
+}
+
+function escapeHtml(text) {
+const div = document.createElement("div");
+div.textContent = text;
+return div.innerHTML;
+}
+
+async function markRead(alertId) {
+await fetch("/api/alerts/read", {
+method: "POST",
+headers: {"Content-Type": "application/json"},
+body: JSON.stringify({id: alertId}),
+});
+loadAlerts();
+}
+
+async function markAllRead() {
+await fetch("/api/alerts/read", {
+method: "POST",
+headers: {"Content-Type": "application/json"},
+body: JSON.stringify({id: "all"}),
+});
+loadAlerts();
+}
+
 loadDashboard();
+loadAlerts();
 </script>
 </body>
 </html>
