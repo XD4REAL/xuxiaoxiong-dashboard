@@ -34,6 +34,9 @@ def add_fact(fact: str, value: str, source: str = "auto"):
             existing["source"] = source
             _save(data)
             return
+        if existing["value"] == value:
+            # 值相同但事实名不同 → 跳过，避免重复
+            return
     data["facts"].append({
         "fact": fact,
         "value": value,
