@@ -58,7 +58,7 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
         '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}'
         ',"_m":[{"f":"事实名","v":"值"}]}'
         "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
-        "\n_m是可选记忆：只记录这三类——①许小熊相关的设定/规则 ②小多和小豆的共同回忆（去了哪、做了什么、约定等）③小豆明确纠正你的错误认知。f和v各≤20字。日常闲聊、普通情绪表达不记。"
+        "\n_m为记忆提取（必填，即使为空也要写[]）。只记录三类：①许小熊的设定/规则 ②小多和小豆的共同回忆 ③小豆纠正你的错误。f和v各≤15字。无新信息时_m:[]。"
     )
     system_content += analysis_instruction
 
