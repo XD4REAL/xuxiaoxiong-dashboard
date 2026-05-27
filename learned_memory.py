@@ -50,27 +50,39 @@ def get_all_facts() -> list[dict]:
     return data["facts"]
 
 
+def save_llm_memories(memories: list[dict]):
+    """保存 LLM 从对话中提取的记忆（自然语言触发，无需口令）"""
+    if not memories:
+        return
+    for m in memories:
+        fact = m.get("f", "").strip()
+        value = m.get("v", "").strip()
+        if fact and value and len(fact) <= 30 and len(value) <= 80:
+            add_fact(fact, value, source="llm_extract")
+
+
 def detect_and_save_corrections(user_message: str) -> bool:
     """
-    从用户消息中检测纠正/教导行为，自动保存记忆
+    从用户消息中检测纠正/教导行为，自动保存记忆（正则兜底）
 
     匹配模式：
+    - "记住：xxx是yyy"
+    - "记住，xxx是yyy"
     - "不对，xxx是yyy"
     - "不是xxx，是yyy"
     - "你记错了，xxx是yyy"
-    - "记住：xxx是yyy"
     """
     msg = user_message.strip()
 
-    # 模式1：显示记住指令 — "记住：xxx是yyy"
-    remember_match = re.search(r"记住[：:]\s*(\S+?)是(\S+)", msg)
+    # 模式1：显示记住指令 — "记住：xxx是yyy" 或 "记住，xxx是yyy"
+    remember_match = re.search(r"记住[：:，,]\s*(\S+?)是(\S+)", msg)
     if remember_match:
         add_fact(remember_match.group(1), remember_match.group(2), source="user_command")
         return True
 
     # 模式2：纠正 — "不对/不是/记错了/记混了，xxx是yyy"
     correction_match = re.search(
-        r"(不对|不是|错了|记错了|记混了)[，,。.\s](.?)(?:是|为)(\S+)",
+        r"(不对|不是|错了|记错了|记混了)[，,。.\s](.+?)(?:是|为)(\S+)",
         msg
     )
     if correction_match:
@@ -92,5 +104,5 @@ def build_memory_context() -> str:
     lines = ["\n【我记住的事情（用户纠正过/教过我的）】"]
     for f in facts:
         lines.append(f"- {f['fact']}：{f['value']}")
-    lines.append("（以上是用户纠正过我的内容，回答时以这些为准）")
+    lines.append("（以上是小豆纠正/教过我的内容，优先级最高。如果和系统提示词有矛盾以这里为准，这里内部有矛盾以排后面的为准。）")
     return "\n".join(lines)

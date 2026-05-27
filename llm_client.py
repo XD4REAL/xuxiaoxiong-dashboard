@@ -14,7 +14,7 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     today_info = get_today_info()
 
     # 构建包含日期和纪念日的上下文
-    date_context = f"【当前日期】{today_info['today_cn']}\n"
+    date_context = f"【当前日期和时间（北京时间）】{today_info['today_cn']}\n"
 
     if today_info["today_events"]:
         date_context += "【今天的特殊日子】\n"
@@ -55,8 +55,10 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     # 附加分析任务指令（模型会在回复末尾输出结构化分析，程序自动移除）
     analysis_instruction = (
         "\n\n【分析任务】每条回复结尾附加一行JSON："
-        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}}'
+        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}'
+        ',"_m":[{"f":"事实名","v":"值"}]}'
         "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
+        "\n_m是可选记忆：只记录这三类——①许小熊相关的设定/规则 ②小多和小豆的共同回忆（去了哪、做了什么、约定等）③小豆明确纠正你的错误认知。f和v各≤20字。日常闲聊、普通情绪表达不记。"
     )
     system_content += analysis_instruction
 
@@ -85,16 +87,32 @@ def _post_with_retry(url, headers, json, timeout, max_retries=1):
     return resp
 
 
-def _parse_analysis(raw: str) -> tuple[str, dict | None]:
-    """从回复文本中提取分析数据，返回 (纯净回复, 分析dict或None)"""
-    m = re.search(r'\{"_a":\{[^}]+\}\}', raw)
-    if not m:
-        return raw, None
-    full_reply = raw[:m.start()] + raw[m.end():]
-    full_reply = full_reply.strip()
+def _parse_analysis(raw: str) -> tuple[str, dict | None, list | None]:
+    """从回复文本中提取分析数据和记忆，返回 (纯净回复, 分析dict或None, 记忆list或None)"""
+    start = raw.rfind('{"_a":')
+    if start < 0:
+        return raw, None, None
+
+    brace_count = 0
+    end = -1
+    for i in range(start, len(raw)):
+        if raw[i] == '{':
+            brace_count += 1
+        elif raw[i] == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                end = i
+                break
+
+    if end < 0:
+        return raw, None, None
+
+    json_str = raw[start:end + 1]
+    full_reply = (raw[:start] + raw[end + 1:]).strip()
+
     try:
-        a = json.loads(m.group())
-        inner = a["_a"]
+        data = json.loads(json_str)
+        inner = data["_a"]
         analysis = {
             "emotion": inner.get("e", "neutral"),
             "confidence": inner.get("c", "high"),
@@ -106,10 +124,17 @@ def _parse_analysis(raw: str) -> tuple[str, dict | None]:
             analysis["confidence"] = "high"
         if not isinstance(analysis["topics"], list):
             analysis["topics"] = ["日常"]
-        return full_reply, analysis
+
+        memories = data.get("_m", None)
+        if memories and isinstance(memories, list):
+            memories = [m for m in memories if isinstance(m, dict) and m.get("f") and m.get("v")]
+            if not memories:
+                memories = None
+
+        return full_reply, analysis, memories
     except Exception:
         pass
-    return raw, None
+    return raw, None, None
 
 
 def chat_stream(history: list[dict], user_message: str):
@@ -144,17 +169,16 @@ def chat_stream(history: list[dict], user_message: str):
             content = delta.get("content", "")
             if content:
                 full_text += content
-                yield content, False, None
+                yield content, False, None, None
         except Exception:
             continue
 
-    reply, analysis = _parse_analysis(full_text)
-    # 如果分析行尚未完全到达、被解析截断，直接回车不返回分析
-    yield "", True, analysis
+    reply, analysis, memories = _parse_analysis(full_text)
+    yield "", True, analysis, memories
 
 
-def chat(history: list[dict], user_message: str) -> tuple[str, dict | None]:
-    """调用 DeepSeek API 生成回复，返回 (回复文本, 分析数据或None)"""
+def chat(history: list[dict], user_message: str) -> tuple[str, dict | None, list | None]:
+    """调用 DeepSeek API 生成回复，返回 (回复文本, 分析数据或None, 记忆列表或None)"""
     messages = build_messages(history, user_message)
 
     resp = _post_with_retry(
@@ -181,6 +205,12 @@ UNCERTAIN_KEYWORDS = [
     "换个话题", "不太明白", "没听懂", "还没有教", "还没学",
     "没学过", "还不懂", "不太会", "没教过", "没学会",
     "我不了解", "我不太了解", "不太知道",
+]
+
+# 机器人主动说"要问小多"时触发求助邮件的关键词
+ALERT_KEYWORDS = [
+    "问问小多", "问小多吧", "我去问问", "我帮你问问",
+    "让我问问", "我去问一下", "我问问小多",
 ]
 
 

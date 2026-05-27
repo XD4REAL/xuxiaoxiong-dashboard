@@ -14,11 +14,11 @@ import threading
 import time
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
 from config import SECRET_KEY
-from llm_client import chat, chat_stream, assess_confidence
+from llm_client import chat, chat_stream, _parse_analysis, ALERT_KEYWORDS
 from alerts import save_alert, get_alerts, mark_read, mark_all_read, get_unread_count
-from email_notifier import send_alert_email
+from email_notifier import send_alert
 from memory import load_history, add_message, cleanup_old_histories
-from analytics import record_message, get_daily_frequency, get_emotion_stats, get_topic_stats, get_user_summary, get_daily_stats, upload_stats, fetch_supabase_history, cleanup_old_sessions, get_recent_emotions
+from analytics import record_message, get_daily_frequency, get_emotion_stats, get_topic_stats, get_user_summary, get_daily_stats, upload_stats, fetch_supabase_history, cleanup_old_sessions, get_recent_emotions, consolidate_topics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -93,10 +93,14 @@ def chat_api():
         detect_and_save_corrections(user_message)
 
         history = load_history(user_id)
-        reply, analysis = chat(history, user_message)
+        reply, analysis, memories = chat(history, user_message)
         add_message(user_id, "user", user_message)
         add_message(user_id, "assistant", reply)
         record_message(user_id, "user", user_message, analysis=analysis)
+
+        # 保存 LLM 提取的记忆
+        from learned_memory import save_llm_memories
+        save_llm_memories(memories or [])
 
         # 求助检测（必须在 upload_stats 之前，避免编码异常阻断）
         _check_and_alert(user_id, user_message, reply, analysis=analysis)
@@ -135,15 +139,22 @@ def chat_stream_api():
             add_message(user_id, "user", user_message)
 
             reply_parts = []
-            for chunk, is_done, analysis in chat_stream(history, user_message):
+            for chunk, is_done, _analysis_unused, _memories_unused in chat_stream(history, user_message):
                 if chunk:
                     reply_parts.append(chunk)
                     yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 if is_done:
                     full_reply = "".join(reply_parts)
-                    add_message(user_id, "assistant", full_reply)
+                    clean_reply, analysis, memories = _parse_analysis(full_reply)
+                    if not clean_reply:
+                        clean_reply = full_reply
+                    if clean_reply != full_reply:
+                        yield f"data: {json.dumps({'replace': clean_reply})}\n\n"
+                    add_message(user_id, "assistant", clean_reply)
                     record_message(user_id, "user", user_message, analysis=analysis)
-                    _check_and_alert(user_id, user_message, full_reply, analysis=analysis)
+                    from learned_memory import save_llm_memories
+                    save_llm_memories(memories or [])
+                    _check_and_alert(user_id, user_message, clean_reply, analysis=analysis)
                     stats = get_daily_stats(user_id)
                     upload_stats(stats)
                     yield f"data: {json.dumps({'done': True})}\n\n"
@@ -189,34 +200,48 @@ def dashboard_api(user_id):
 
 @app.route("/api/stats")
 def stats_api():
-    """仪表盘数据接口 — 优先从 Supabase 拉取，回退到本地文件"""
+    """仪表盘数据接口 — 返回 {summary, rows}，优先 Supabase，回退本地"""
     import json, os
     from collections import Counter
-    from datetime import date, timedelta
 
     days = request.args.get("days", 30, type=int)
 
     # 优先从 Supabase 拉取（部署环境）
-    rows = fetch_supabase_history(days=days)
-    if rows:
-        return jsonify(rows)
+    chart_rows = fetch_supabase_history(days=days)
+    if chart_rows:
+        # 获取真实全量统计数据（不受 days 限制）
+        all_rows = fetch_supabase_history(days=None)
+        summary = {
+            "total_sessions": len(all_rows),
+            "total_messages": sum(r.get("total_messages", 0) for r in all_rows),
+            "last_active": all_rows[0]["date"] if all_rows else None,
+        }
+        return jsonify({"summary": summary, "rows": chart_rows})
 
     # 回退：本地 analytics_data.json（开发环境）
     analytics_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "analytics_data.json")
 
     if not os.path.exists(analytics_file):
-        return jsonify([])
+        return jsonify({"summary": {"total_sessions": 0, "total_messages": 0, "last_active": None}, "rows": []})
 
     with open(analytics_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     users = data.get("users", {})
     if not users:
-        return jsonify([])
+        return jsonify({"summary": {"total_sessions": 0, "total_messages": 0, "last_active": None}, "rows": []})
 
     user_data = list(users.values())[0]
-    sessions = user_data.get("sessions", [])
-    sessions = sorted(sessions, key=lambda s: s["date"], reverse=True)[:days]
+    all_sessions = user_data.get("sessions", [])
+    all_sessions = sorted(all_sessions, key=lambda s: s["date"], reverse=True)
+    sessions = all_sessions[:days]
+
+    total_messages = sum(s.get("count", 0) for s in all_sessions)
+    summary = {
+        "total_sessions": len(all_sessions),
+        "total_messages": total_messages,
+        "last_active": all_sessions[0]["date"] if all_sessions else None,
+    }
 
     result = []
     for s in sessions:
@@ -234,7 +259,7 @@ def stats_api():
             "topics": dict(topics),
         })
 
-    return jsonify(result)
+    return jsonify({"summary": summary, "rows": result})
 
 
 @app.route("/api/dashboard/supabase")
@@ -242,6 +267,15 @@ def dashboard_supabase_api():
     """从 Supabase 拉取历史数据"""
     rows = fetch_supabase_history(days=30)
     return jsonify(rows)
+
+
+@app.route("/api/topics/consolidate")
+def topics_consolidate_api():
+    """用 AI 整合相近话题，返回精简后的话题列表"""
+    days = request.args.get("days", 7, type=int)
+    user_id = session.get("user_id", "xiaodou")
+    topics = consolidate_topics(user_id, days=days)
+    return jsonify(topics)
 
 
 @app.route("/api/alerts")
@@ -275,6 +309,38 @@ def alerts_count_api():
 import time as _time_module
 
 
+def _is_substantive_query(text: str) -> bool:
+    """检查用户消息是否在提问/求助（而非纯社交问候）。"""
+    if len(text) <= 2:
+        return False
+    # 纯社交/问候/语气词，不触发求助
+    social_only = {
+        "你好", "你好呀", "嗨", "哈喽", "嗨喽", "早", "早上好", "中午好", "晚上好",
+        "晚安", "拜拜", "再见", "谢谢", "谢谢你", "多谢", "好的", "好滴", "嗯", "哦",
+        "哈哈", "嘻嘻", "嘿嘿", "呵呵", "呜呜", "emm", "emo", "哎", "唉",
+        "在吗", "在不在", "在不在呀", "在干嘛", "在做什么",
+        "想你", "想你了", "爱你", "抱抱", "贴贴", "mua",
+    }
+    if text.strip() in social_only:
+        return False
+    # 有问号 → 在提问
+    if "？" in text or "?" in text:
+        return True
+    # 包含疑问/请求关键词
+    question_words = [
+        "什么", "怎么", "为什么", "如何", "哪里", "哪儿", "谁", "哪一",
+        "何时", "能不能", "可以吗", "行不行", "好不好", "对不对", "是吗",
+        "怎么办", "怎样", "多少个", "多久", "几点",
+        "帮我", "教我", "告诉我", "解释", "说说", "介绍", "推荐",
+        "查一下", "查一查", "搜一下", "找一下",
+        "是什么意思", "什么是",
+    ]
+    for w in question_words:
+        if w in text:
+            return True
+    return False
+
+
 def _check_and_alert(user_id, user_message, reply, analysis=None):
     """检测是否需要触发求助"""
     triggered = False
@@ -286,12 +352,9 @@ def _check_and_alert(user_id, user_message, reply, analysis=None):
         alert_type = "negative_emotion"
         triggered = True
 
-    # 2. 回答信心检测（仅当未触发负面情绪时）
-    if not triggered:
-        if analysis and analysis.get("confidence") == "low":
-            alert_type = "low_confidence"
-            triggered = True
-        elif not analysis and assess_confidence(reply, user_message):
+    # 2. 机器人主动求助检测（机器人说"问问小多"等关键词 → 发邮件通知小多）
+    if not triggered and _is_substantive_query(user_message):
+        if any(kw in reply for kw in ALERT_KEYWORDS):
             alert_type = "low_confidence"
             triggered = True
 
@@ -309,8 +372,8 @@ def _check_and_alert(user_id, user_message, reply, analysis=None):
     alert = save_alert(alert_type, user_message, reply)
     logger.info(f"[求助] {alert_type}: {user_message[:50]}...")
 
-    # 发送邮件
-    send_alert_email(alert_type, user_message, reply)
+    # 发送通知
+    send_alert(alert_type, user_message, reply)
 
 
 def open_browser():
