@@ -55,10 +55,8 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     # 附加分析任务指令（模型会在回复末尾输出结构化分析，程序自动移除）
     analysis_instruction = (
         "\n\n【分析任务】每条回复结尾附加一行JSON："
-        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}'
-        ',"_m":[{"f":"事实名","v":"值"}]}'
+        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}}'
         "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
-        "\n_m为记忆提取（必填，即使为空也要写[]）。只记录三类：①许小熊的设定/规则 ②小多和小豆的共同回忆 ③小豆纠正你的错误。f和v各≤15字。无新信息时_m:[]。"
     )
     system_content += analysis_instruction
 
@@ -257,3 +255,33 @@ def assess_confidence(reply: str, user_message: str) -> bool:
     if _keyword_check(reply):
         return True
     return _llm_confidence_check(reply, user_message)
+
+
+def extract_memories(user_message: str, reply: str) -> list[dict]:
+    """独立 API 调用，专门从对话中提取记忆（比嵌入分析JSON更可靠）"""
+    prompt = (
+        "从对话中提取值得记住的信息。只提取以下三类：\n"
+        "①许小熊的设定/规则 ②小多和小豆的共同回忆（去哪、做什么、约定）③用户纠正你的错误。\n\n"
+        f"用户：{user_message}\n"
+        f"许小熊：{reply}\n\n"
+        '返回JSON：{"m":[{"f":"事实","v":"值"},...]} 无则{"m":[]}。f和v各≤15字。只返回JSON。'
+    )
+    try:
+        resp = _post_with_retry(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 200,
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        raw = data["choices"][0]["message"]["content"].strip()
+        parsed = json.loads(raw)
+        items = parsed.get("m", [])
+        return [{"f": m["f"].strip(), "v": m["v"].strip()} for m in items if m.get("f") and m.get("v")]
+    except Exception:
+        return []

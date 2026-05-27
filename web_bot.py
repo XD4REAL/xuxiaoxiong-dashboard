@@ -14,7 +14,7 @@ import threading
 import time
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
 from config import SECRET_KEY
-from llm_client import chat, chat_stream, _parse_analysis, ALERT_KEYWORDS
+from llm_client import chat, chat_stream, _parse_analysis, ALERT_KEYWORDS, extract_memories
 from alerts import save_alert, get_alerts, mark_read, mark_all_read, get_unread_count
 from email_notifier import send_alert
 from memory import load_history, add_message, cleanup_old_histories
@@ -100,7 +100,7 @@ def chat_api():
 
         # 保存 LLM 提取的记忆
         from learned_memory import save_llm_memories
-        save_llm_memories(memories or [])
+        save_llm_memories(extract_memories(user_message, reply))
 
         # 求助检测（必须在 upload_stats 之前，避免编码异常阻断）
         _check_and_alert(user_id, user_message, reply, analysis=analysis)
@@ -153,7 +153,7 @@ def chat_stream_api():
                     add_message(user_id, "assistant", clean_reply)
                     record_message(user_id, "user", user_message, analysis=analysis)
                     from learned_memory import save_llm_memories
-                    save_llm_memories(memories or [])
+                    save_llm_memories(extract_memories(user_message, clean_reply))
                     _check_and_alert(user_id, user_message, clean_reply, analysis=analysis)
                     stats = get_daily_stats(user_id)
                     upload_stats(stats)
