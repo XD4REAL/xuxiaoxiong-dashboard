@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>记忆管理 - 许小熊</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #ededed;
+  min-height: 100vh;
+}
+.header {
+  background: #ff9aa2;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header a { color: #fff; text-decoration: none; font-size: 16px; }
+.header h1 { color: #fff; font-size: 18px; flex: 1; text-align: center; }
+.count {
+  text-align: center;
+  padding: 12px;
+  color: #888;
+  font-size: 14px;
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+}
+.card {
+  background: #fff;
+  margin: 8px 12px;
+  padding: 14px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.card-left { flex: 1; min-width: 0; }
+.card-fact { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; }
+.card-value { font-size: 13px; color: #666; word-break: break-all; }
+.card-source {
+  font-size: 11px;
+  color: #bbb;
+  margin-top: 4px;
+}
+.card-del {
+  background: #ff6b6b;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.card-del:active { opacity: 0.7; }
+.empty { text-align: center; padding: 60px 20px; color: #aaa; font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <a href="/">← 聊天</a>
+  <h1>记忆管理</h1>
+  <a href="/dashboard">仪表盘</a>
+</div>
+<div class="count" id="count">加载中...</div>
+<div id="list"></div>
+<div class="empty" id="empty" style="display:none">还没有记忆呢~ OvO</div>
+
+<script>
+async function load() {
+  const resp = await fetch('/api/memories');
+  const facts = await resp.json();
+  document.getElementById('count').textContent = `共 ${facts.length} 条记忆`;
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  list.innerHTML = '';
+  if (facts.length === 0) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  facts.forEach((f, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-left">
+        <div class="card-fact">${esc(f.fact)}</div>
+        <div class="card-value">${esc(f.value)}</div>
+        <div class="card-source">来源: ${esc(f.source)}</div>
+      </div>
+      <button class="card-del" onclick="del(${i}, this)">删除</button>
+    `;
+    list.appendChild(card);
+  });
+}
+
+async function del(index, btn) {
+  if (!confirm('确定删除这条记忆吗？')) return;
+  const resp = await fetch(`/api/memories/${index}`, { method: 'DELETE' });
+  if (resp.ok) {
+    btn.closest('.card').remove();
+    const left = document.querySelectorAll('.card').length;
+    document.getElementById('count').textContent = `共 ${left} 条记忆`;
+    if (left === 0) document.getElementById('empty').style.display = 'block';
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+load();
+</script>
+</body>
+</html>

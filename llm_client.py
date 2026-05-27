@@ -36,7 +36,7 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
 
     # 构建系统消息（注入日期上下文 + 持久化记忆）
     from learned_memory import build_memory_context
-    memory_context = build_memory_context()
+    memory_context = build_memory_context(user_message)
     system_content = SYSTEM_PROMPT + "\n\n" + date_context
     if memory_context:
         system_content += "\n\n" + memory_context

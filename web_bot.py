@@ -181,6 +181,32 @@ def remember():
         return jsonify({"status": "ok", "message": f"记住啦：{fact}是{value} OvO"})
     return jsonify({"status": "error", "message": "格式不对呢，要传 fact 和 value"}), 400
 
+@app.route("/memories")
+def memories_page():
+    """记忆管理页面"""
+    return render_template("memories.html")
+
+
+@app.route("/api/memories")
+def api_memories():
+    """获取所有 learned_memory"""
+    from learned_memory import get_all_facts
+    facts = get_all_facts()
+    return jsonify(facts)
+
+
+@app.route("/api/memories/<int:index>", methods=["DELETE"])
+def api_delete_memory(index):
+    """删除某条记忆"""
+    from learned_memory import _load, _save
+    data = _load()
+    if 0 <= index < len(data["facts"]):
+        data["facts"].pop(index)
+        _save(data)
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error", "message": "索引不存在"}), 404
+
+
 @app.route("/dashboard")
 def dashboard():
     """主用户仪表盘页面"""
