@@ -60,6 +60,14 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     )
     system_content += analysis_instruction
 
+    # 每次请求强制提醒 — 防止LLM惯性使用括号动作和长段落
+    system_content += (
+        "\n\n【重要：本次回复要求】"
+        "\n- 禁止使用任何括号内容（不要写（歪着头）、（眨眨眼）、（语气温柔）这类）"
+        "\n- 回复1-3句话，不要长段落"
+        "\n- 像真人发微信一样自然"
+    )
+
     # 构建消息列表
     messages = [{"role": "system", "content": system_content}]
 
