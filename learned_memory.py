@@ -53,26 +53,35 @@ def get_all_facts() -> list[dict]:
     return data["facts"]
 
 
-# fact 名不能是这些分类标签（太泛，不是具体事实）
-_GENERIC_FACT_PATTERNS = [
-    "共同回忆", "共同喜好", "共同爱好",
-    "纠正错误", "记错了", "记混了",
-    "许小熊的设定", "小豆纠正", "小多的", "小豆的",
-    "日常习惯", "性格特点", "功能说明",
-    "注意事项", "规则说明",
+# fact 名中不能出现这些泛化词（说明 LLM 在用分类标签而非具体事实名）
+_GENERIC_KEYWORDS = [
+    "共同", "纠正", "记错", "记混", "喜好", "爱好", "习惯",
+    "性格", "特点", "功能", "说明", "规则", "设定",
+    "日常", "备忘", "注意", "最爱", "最喜欢",
+    "回忆", "记录", "记忆",
 ]
 
 
 def _is_generic_fact_name(fact: str) -> bool:
-    """检查 fact 名是否是分类标签而非具体事实"""
-    for pattern in _GENERIC_FACT_PATTERNS:
-        if pattern in fact:
+    """检查 fact 名是否是分类标签/描述性短语，而非具体事实名
+
+    好例子：哈尔滨雪翅膀、棋士节谐音、许小熊日
+    坏例子：小豆喜欢的颜色、小豆和小多共同回忆、小豆纠正错误
+    """
+    # 1. 包含泛化关键词 → 是分类标签
+    for kw in _GENERIC_KEYWORDS:
+        if kw in fact:
             return True
-    # 太短的通常是标签
-    if len(fact) <= 2:
+    # 2. "XX的XX" 结构 → 描述性短语，不是事实名
+    #    但允许 "的" 在开头/结尾的少量情况
+    de_pos = fact.find("的")
+    if de_pos > 0 and de_pos < len(fact) - 1:
+        # "的"在中间 → 描述性短语（"小豆喜欢的颜色"）
         return True
-    # 以"的"结尾的通常是分类（如"小豆的喜好"）
-    if fact.endswith("的") and len(fact) <= 5:
+    if fact.endswith("的"):
+        return True
+    # 3. 太短
+    if len(fact) <= 2:
         return True
     return False
 
@@ -111,11 +120,17 @@ def save_llm_memories(memories: list[dict]):
         # 基本长度检查
         if not fact or not value:
             continue
-        if len(fact) < 3 or len(fact) > 20:
+        if len(fact) < 3 or len(fact) > 12:
             continue
         if len(value) < 4 or len(value) > 60:
             continue
-        # 拒绝分类标签
+        # LLM 偷懒：直接复制 value 作为 fact
+        if fact == value:
+            continue
+        # fact 中包含 value → 说明是描述性短语而非命名实体
+        if len(value) >= 4 and value in fact:
+            continue
+        # 拒绝分类标签/描述性短语
         if _is_generic_fact_name(fact):
             continue
         # 拒绝近重复
