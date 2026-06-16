@@ -1,0 +1,21 @@
+{
+  "name": "许小熊 - 小多的数字分身",
+  "short_name": "许小熊",
+  "description": "许小熊 AI 聊天机器人",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ededed",
+  "theme_color": "#ff9aa2",
+  "icons": [
+    {
+      "src": "/static/avatar.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/static/avatar.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

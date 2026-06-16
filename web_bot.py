@@ -73,6 +73,12 @@ def index():
     return render_template("chat.html")
 
 
+@app.route("/sw.js")
+def service_worker():
+    """Service Worker — 从 root 路径提供，确保全站 scope"""
+    return app.send_static_file("sw.js")
+
+
 @app.route("/chat", methods=["POST"])
 def chat_api():
     data = request.get_json()

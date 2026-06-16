@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ff9aa2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="许小熊">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/avatar.jpg">
 <title>许小熊</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -433,6 +439,11 @@ hideLoading();
 sendBtn.disabled = false;
 userInput.focus();
 }
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
 }
 </script>
 </body>
