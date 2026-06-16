@@ -53,15 +53,76 @@ def get_all_facts() -> list[dict]:
     return data["facts"]
 
 
+# fact 名不能是这些分类标签（太泛，不是具体事实）
+_GENERIC_FACT_PATTERNS = [
+    "共同回忆", "共同喜好", "共同爱好",
+    "纠正错误", "记错了", "记混了",
+    "许小熊的设定", "小豆纠正", "小多的", "小豆的",
+    "日常习惯", "性格特点", "功能说明",
+    "注意事项", "规则说明",
+]
+
+
+def _is_generic_fact_name(fact: str) -> bool:
+    """检查 fact 名是否是分类标签而非具体事实"""
+    for pattern in _GENERIC_FACT_PATTERNS:
+        if pattern in fact:
+            return True
+    # 太短的通常是标签
+    if len(fact) <= 2:
+        return True
+    # 以"的"结尾的通常是分类（如"小豆的喜好"）
+    if fact.endswith("的") and len(fact) <= 5:
+        return True
+    return False
+
+
+def _is_near_duplicate(value: str, existing_facts: list[dict]) -> bool:
+    """检查 value 是否与已有记忆高度重合（避免换说法绕过去重）"""
+    for f in existing_facts:
+        ev = f.get("value", "")
+        # 子串包含
+        if len(value) >= 4 and len(ev) >= 4:
+            if value in ev or ev in value:
+                return True
+        # 字符重叠率 > 70%
+        if len(value) > 4 and len(ev) > 4:
+            common = len(set(value) & set(ev))
+            overlap = common / max(len(value), len(ev))
+            if overlap > 0.7:
+                return True
+    return False
+
+
 def save_llm_memories(memories: list[dict]):
-    """保存 LLM 从对话中提取的记忆（自然语言触发，无需口令）"""
+    """保存 LLM 从对话中提取的记忆（自然语言触发，无需口令）
+
+    过滤规则：
+    - fact 名不能是通用分类标签
+    - value 不能与已有记忆高度重复
+    - 长度限制
+    """
     if not memories:
         return
+    existing = get_all_facts()
     for m in memories:
         fact = m.get("f", "").strip()
         value = m.get("v", "").strip()
-        if fact and value and len(fact) <= 30 and len(value) <= 80:
-            add_fact(fact, value, source="llm_extract")
+        # 基本长度检查
+        if not fact or not value:
+            continue
+        if len(fact) < 3 or len(fact) > 20:
+            continue
+        if len(value) < 4 or len(value) > 60:
+            continue
+        # 拒绝分类标签
+        if _is_generic_fact_name(fact):
+            continue
+        # 拒绝近重复
+        if _is_near_duplicate(value, existing):
+            continue
+        add_fact(fact, value, source="llm_extract")
+        existing.append({"fact": fact, "value": value})
 
 
 def detect_and_save_corrections(user_message: str) -> bool:
