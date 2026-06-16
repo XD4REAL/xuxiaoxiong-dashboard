@@ -407,6 +407,10 @@ if (!bubble) bubble = createBotBubble();
 bubble.textContent += payload.chunk;
 chatBox.scrollTop = chatBox.scrollHeight;
 }
+if (payload.replace && bubble) {
+bubble.textContent = payload.replace;
+chatBox.scrollTop = chatBox.scrollHeight;
+}
 if (payload.done && bubble) {
 const dot = document.createElement('span');
 dot.className = 'unread-dot';

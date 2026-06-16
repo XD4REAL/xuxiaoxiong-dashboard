@@ -117,7 +117,6 @@ def build_memory_context(user_message: str = "", max_facts: int = 8) -> str:
             "说", "想", "知道", "觉得", "记得", "告诉", "这个", "那个", "可以",
             "一个", "一些", "一下", "今天", "现在", "真的", "好", "很", "太",
         }
-        keywords = [w for w in user_message if len(w) >= 2]
         # 简单分词：按常见分隔符拆
         import re
         words = re.split(r"[，,。\.！!？?\s]+", user_message)

@@ -136,23 +136,30 @@ def _parse_analysis(raw: str) -> tuple[str, dict | None, list | None]:
 
 
 def chat_stream(history: list[dict], user_message: str):
-    """流式生成回复，逐块 yield (chunk_text, is_done, analysis_dict_or_none)"""
+    """流式生成回复，逐块 yield (chunk_text, is_done, analysis_dict_or_none, memories_or_none)"""
     messages = build_messages(history, user_message)
 
-    resp = requests.post(
-        f"{DEEPSEEK_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-        json={
-            "model": DEEPSEEK_MODEL,
-            "messages": messages,
-            "temperature": 0.8,
-            "max_tokens": 512,
-            "top_p": 0.95,
-            "stream": True,
-        },
-        timeout=30,
-        stream=True,
-    )
+    max_retries = 1
+    for attempt in range(max_retries + 1):
+        resp = requests.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": messages,
+                "temperature": 0.8,
+                "max_tokens": 512,
+                "top_p": 0.95,
+                "stream": True,
+            },
+            timeout=30,
+            stream=True,
+        )
+        if resp.status_code < 500:
+            break
+        if attempt < max_retries:
+            import time
+            time.sleep(1)
 
     full_text = ""
     for line in resp.iter_lines(decode_unicode=True):

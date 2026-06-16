@@ -1,35 +1,29 @@
-"""邮件通知模块 — 许小熊求助时发邮件给小多"""
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from config import EMAIL_CONFIG
+"""通知模块 — 许小熊求助时通过 Resend API 邮件通知小多"""
+import requests
+from config import RESEND_API_KEY, RESEND_SENDER, EMAIL_RECEIVER
+
+TYPE_NAMES = {
+    "negative_emotion": "小豆情绪低落",
+    "low_confidence": "小熊不知道该怎么回",
+}
 
 
 def is_configured():
-    return bool(
-        EMAIL_CONFIG.get("smtp_server")
-        and EMAIL_CONFIG.get("sender")
-        and EMAIL_CONFIG.get("password")
-        and EMAIL_CONFIG.get("receiver")
-    )
+    return bool(RESEND_API_KEY and EMAIL_RECEIVER)
 
 
-def send_alert_email(alert_type, trigger_message, bot_reply):
-    if not is_configured():
+def send_alert(alert_type, trigger_message, bot_reply):
+    """通过 Resend HTTP API 发送求助邮件"""
+    if not (RESEND_API_KEY and EMAIL_RECEIVER):
         print("[email] 邮件未配置，跳过发送")
         return False
 
-    type_names = {
-        "negative_emotion": "小豆情绪低落",
-        "low_confidence": "小熊不知道该怎么回",
-    }
-    subject = f"[许小熊求助] {type_names.get(alert_type, alert_type)}"
-
+    subject = f"[许小熊求助] {TYPE_NAMES.get(alert_type, alert_type)}"
     body = f"""小多你好，
 
 许小熊检测到了需要你关注的情况：
 
-类型：{type_names.get(alert_type, alert_type)}
+类型：{TYPE_NAMES.get(alert_type, alert_type)}
 小豆的消息：{trigger_message}
 小熊的回复：{bot_reply}
 
@@ -39,23 +33,25 @@ def send_alert_email(alert_type, trigger_message, bot_reply):
 """
 
     try:
-        msg = MIMEMultipart()
-        msg["From"] = EMAIL_CONFIG["sender"]
-        msg["To"] = EMAIL_CONFIG["receiver"]
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-
-        server = smtplib.SMTP(
-            EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"], timeout=10
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": f"许小熊通知 <{RESEND_SENDER}>",
+                "to": [EMAIL_RECEIVER],
+                "subject": subject,
+                "text": body,
+            },
+            timeout=10,
         )
-        server.starttls()
-        server.login(EMAIL_CONFIG["sender"], EMAIL_CONFIG["password"])
-        server.sendmail(
-            EMAIL_CONFIG["sender"], EMAIL_CONFIG["receiver"], msg.as_string()
-        )
-        server.quit()
-        print("[email] 邮件发送成功")
-        return True
+        if r.status_code == 200:
+            print("[email] 邮件发送成功 (Resend API)")
+            return True
+        print(f"[email] 发送失败 ({r.status_code}): {r.text[:200]}")
+        return False
     except Exception as e:
-        print(f"[email] 发送失败: {e}")
+        print(f"[email] 发送失败 ({type(e).__name__}): {e}")
         return False

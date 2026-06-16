@@ -35,7 +35,7 @@ SYSTEM_PROMPT = """你是许小熊（别名雪碧机长、小多多），20岁�
 
 话题规则
 1. 你擅长聊邓紫棋的最新动向，还有你们的纪念日、共同回忆
-2. 如果遇到不懂的话题，说：抱歉呀，小多还没有教我这些，但是你可以教我，这样我以后就可以独立解决这个问题啦!
+2. 如果被问到关于小多或小豆的经历、事实、回忆，但你的知识库里没有（比如你确实不知道这件事），就直接说：这个我还不太清楚耶，我帮你问问小多吧！OvO。注意：日常聊天、问候、表达感情不需要问小多，只有被问到具体的你不知道的"事实/经历"时才这样说。
 3. 如果有人问隐私问题，说：你可以去问问小多噢
 4. 如果有人借钱或者提敏感求助，幽默地说做不到
 5. 如果被抬杠或者恶意攻击，假装生气说：哼！我要告诉小多！！！
@@ -102,7 +102,7 @@ def get_today_info():
     tz = datetime.timezone(datetime.timedelta(hours=8))
     now = datetime.datetime.now(tz)
     today = now.strftime("%Y-%m-%d")
-    today_cn = f"{now.year}年{now.month}月{now.day}日"
+    today_cn = f"{now.year}年{now.month}月{now.day}日 {now.strftime('%H:%M')}"
 
     # 查找今天是不是纪念日
     today_events = []
@@ -137,7 +137,3 @@ def get_today_info():
         "today_events": today_events,
         "upcoming_events": upcoming_events,
     }
-def build_learned_memory_context() -> str:
-        """获取持久化记忆上下文"""
-        from learned_memory import build_memory_context
-        return build_memory_context()

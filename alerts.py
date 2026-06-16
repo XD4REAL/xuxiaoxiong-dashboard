@@ -4,7 +4,12 @@
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+CST = timezone(timedelta(hours=8))  # 北京时间
+
+def _now():
+    return datetime.now(CST)
 
 ALERTS_FILE = "alerts.json"
 
@@ -26,7 +31,7 @@ def save_alert(alert_type, trigger_message, bot_reply, context=None):
     alert = {
         "id": uuid.uuid4().hex[:8],
         "type": alert_type,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": _now().strftime("%Y-%m-%d %H:%M:%S"),
         "trigger_message": trigger_message,
         "bot_reply": bot_reply,
         "context": context or {},

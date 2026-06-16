@@ -13,13 +13,11 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 # Flask 密钥，用于 session
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
-EMAIL_CONFIG = {
-    "smtp_server": os.getenv("EMAIL_SMTP_SERVER", ""),
-    "smtp_port": int(os.getenv("EMAIL_SMTP_PORT", "587")),
-    "sender": os.getenv("EMAIL_SENDER", ""),
-    "password": os.getenv("EMAIL_PASSWORD", ""),
-    "receiver": os.getenv("EMAIL_RECEIVER", ""),
-}
+# Resend HTTP API 发邮件（替代 SMTP，绕过 PythonAnywhere 端口封锁）
+# 免费版用 onboarding@resend.dev 发信，只能发给注册 Resend 时的邮箱
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_SENDER = os.getenv("RESEND_SENDER", "onboarding@resend.dev")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER", "")
 
 if not DEEPSEEK_API_KEY:
     raise ValueError("请设置 DEEPSEEK_API_KEY 环境变量（在 .env 文件里）")

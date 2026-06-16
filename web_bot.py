@@ -332,9 +332,6 @@ def alerts_count_api():
     return jsonify({"unread": get_unread_count()})
 
 
-import time as _time_module
-
-
 def _is_substantive_query(text: str) -> bool:
     """检查用户消息是否在提问/求助（而非纯社交问候）。"""
     if len(text) <= 2:
@@ -388,7 +385,7 @@ def _check_and_alert(user_id, user_message, reply, analysis=None):
         return
 
     # 冷却检查
-    now = _time_module.time()
+    now = time.time()
     last = _last_alert_time.get(alert_type, 0)
     if now - last < ALERT_COOLDOWN:
         return

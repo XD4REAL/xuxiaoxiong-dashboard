@@ -1,4 +1,4 @@
-# 许小熊 Bot v1.2
+# 许小熊 Bot v1.3
 
 小多的数字分身 — 一个用 DeepSeek 驱动的陪伴型聊天机器人，为小豆而生 OvO
 
@@ -30,8 +30,8 @@
 ├── email_notifier.py   # 邮件通知（求助时发邮件给小多）
 ├── memory.py           # 对话历史本地持久化
 ├── learned_memory.py   # 跨对话长期记忆（用户教给熊的知识）
-├── dashboard_server.py # 独立仪表盘服务
-├── _patch.py           # 代码补丁脚本（开发辅助）
+
+
 ├── templates/
 │   └── chat.html       # 聊天界面（仿微信风格）
 ├── static/
@@ -91,12 +91,50 @@ pyinstaller 许小熊.spec
 
 打包后 `dist/许小熊/` 目录下会生成可独立运行的 `.exe`。
 
+## 云端部署
+
+许小熊运行在 **PythonAnywhere** 免费账户上，域名 `xd4realpython.pythonanywhere.com`。免费账户每月需手动续期一次。
+
+### 部署架构
+
+```
+本地开发 → GitHub (git push) → PythonAnywhere (git pull + 重载)
+```
+
+### 部署更新步骤
+
+1. 本地提交并推送到 GitHub：
+   ```bash
+   git add -A
+   git commit -m "描述改动"
+   git push origin main
+   ```
+
+2. 登录 [PythonAnywhere](https://www.pythonanywhere.com)，打开 Web App 对应的 Bash Console：
+   ```bash
+   cd ~/xuxiaoxiong-bot
+   git pull origin main
+   ```
+
+3. 在 PythonAnywhere "Web" 标签页点击 **Reload** 按钮使更新生效。
+
+### 环境变量
+
+云端 `.env` 配置与本地一致（DeepSeek API Key、Supabase、邮件通知），需在 PythonAnywhere 服务器上单独创建，不纳入 git 版本控制。
+
+### 注意事项
+
+- 免费账户有每日 API 调用配额和 CPU 时间限制
+- 每 30 天需登录 PythonAnywhere 续期一次，否则 Web App 会被暂停
+- 日志文件（`chat_histories/`、`analytics_data.json` 等）存储在服务器本地，不会随 git 同步
+
 ## API 接口
 
 | 路由 | 说明 |
 |------|------|
 | `GET /` | 聊天页面 |
 | `POST /chat` | 发送消息，返回机器人回复 |
+| `POST /chat/stream` | 流式发送消息（SSE），逐字返回回复 |
 | `POST /remember` | 手动教许小熊记住一条知识 |
 | `GET /dashboard` | 数据仪表盘页面 |
 | `GET /api/dashboard/<user_id>` | 仪表盘数据 JSON |
@@ -112,3 +150,14 @@ pyinstaller 许小熊.spec
 - **LLM**: DeepSeek Chat API
 - **数据库**: Supabase (PostgreSQL) + 本地 JSON
 - **打包**: PyInstaller
+
+## 更新日志
+
+### v1.3 (2026-05-23)
+
+- **流式回复** — 新增 `/chat/stream` SSE 端点，前端改为逐字渲染，体验接近真实聊天打字效果
+- **API 调用合并** — 分析任务改为内嵌到回复 prompt 中一次完成，每条消息从 3 次 API 调用降为 1 次（成本降低约 67%）
+- **请求失败重试** — DeepSeek API 遇到 5xx 自动重试一次（1s 间隔），提升可用性
+- **IP 限流** — 新增基于 IP 的滑动窗口限流（20 条/分钟），防止滥用
+- **服务合并** — 废弃 `dashboard_server.py`，所有路由统一到 `web_bot.py`
+- **项目清理** — 删除 PyInstaller 构建产物、空文件、已合并的补丁脚本，释放约 87MB

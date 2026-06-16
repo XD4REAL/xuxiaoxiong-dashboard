@@ -182,7 +182,7 @@ padding: 12px;
 
 <div class="chart-row">
 <div class="chart-card">
-<h3>📈 每日使用频率（最近14天）</h3>
+<h3>📈 每日使用频率（最近7天）</h3>
 <canvas id="freqChart"></canvas>
 </div>
 <div class="chart-card">
@@ -192,7 +192,8 @@ padding: 12px;
 </div>
 
 <div class="topic-card">
-<h3>🏷️ 热门话题</h3>
+<h3>🏷️ 热门话题 <span style="font-size:12px;color:#aaa;font-weight:400;">(最近7天)</span></h3>
+<button class="mark-all-btn" onclick="consolidateTopics()" style="margin-bottom:8px;">🔄 重新整理话题</button>
 <div class="tags" id="topicTags"></div>
 </div>
 
@@ -211,31 +212,57 @@ padding: 12px;
 </div>
 
 <script>
+let currentTopics = [];
+
 async function loadDashboard() {
     try {
-        const res = await fetch("/api/stats?days=30");
-        const rows = await res.json();
-        if (rows.error) {
-            document.querySelector(".header p").textContent = "数据加载失败: " + rows.error;
+        const res = await fetch("/api/stats?days=7");
+        const data = await res.json();
+        if (data.error) {
+            document.querySelector(".header p").textContent = "数据加载失败: " + data.error;
             return;
         }
-        const processed = processSupabaseData(rows);
+        // 新格式: {summary, rows}，兼容旧格式纯数组
+        const summary = data.summary || { total_sessions: 0, total_messages: 0, last_active: null };
+        const rows = data.rows || data;
+        const processed = processSupabaseData(rows, summary);
         renderStats(processed.summary);
         renderFreqChart(processed.frequency);
         renderEmotionChart(processed.emotion);
-        renderTopics(processed.topics);
+        currentTopics = processed.topics;
+        renderTopics(currentTopics);
     } catch (err) {
         console.error("加载失败:", err);
         document.querySelector(".header p").textContent = "无法连接到服务器";
     }
 }
 
-function processSupabaseData(rows) {
-    if (!rows || rows.length === 0) {
-        return { summary: { total_sessions: 0, total_messages: 0, last_active: null }, frequency: [], emotion: { positive: 0, neutral: 0, negative: 0 }, topics: [] };
+async function consolidateTopics() {
+    const btn = document.querySelector('.topic-card .mark-all-btn');
+    const orig = btn.textContent;
+    btn.textContent = '整理中...';
+    btn.disabled = true;
+    try {
+        const res = await fetch("/api/topics/consolidate?days=7");
+        const topics = await res.json();
+        if (topics && topics.length > 0) {
+            currentTopics = topics;
+            renderTopics(currentTopics);
+        }
+    } catch (err) {
+        console.error("整理失败:", err);
+    } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
     }
-    const frequency = rows.map(r => ({ date: r.date, count: r.total_messages || 0 }));
-    const total_messages = rows.reduce((s, r) => s + (r.total_messages || 0), 0);
+}
+
+function processSupabaseData(rows, apiSummary) {
+    if (!rows || rows.length === 0) {
+        return { summary: apiSummary || { total_sessions: 0, total_messages: 0, last_active: null }, frequency: [], emotion: { positive: 0, neutral: 0, negative: 0 }, topics: [] };
+    }
+    const frequency = rows.map(r => ({ date: r.date, count: r.total_messages || 0 })).reverse();
+    
     const total_positive = rows.reduce((s, r) => s + (r.sentiment_positive || 0), 0);
     const total_neutral = rows.reduce((s, r) => s + (r.sentiment_neutral || 0), 0);
     const total_negative = rows.reduce((s, r) => s + (r.sentiment_negative || 0), 0);
@@ -251,7 +278,7 @@ function processSupabaseData(rows) {
     });
     const topics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
     return {
-        summary: { total_sessions: rows.length, total_messages, last_active: rows[rows.length - 1]?.date || null },
+        summary: apiSummary || { total_sessions: rows.length, total_messages: rows.reduce((s, r) => s + (r.total_messages || 0), 0), last_active: rows[0]?.date || null },
         frequency, emotion, topics
     };
 }
@@ -320,8 +347,10 @@ labels: { padding: 16, usePointStyle: true }
 
 function renderTopics(topics) {
 const container = document.getElementById("topicTags");
-if (!topics || topics.length === 0) {
-container.innerHTML = "<span style='color:#ccc'>暂无数据</span>";
+// 隐藏只出现一次的话题
+topics = (topics || []).filter(t => t.count > 1);
+if (topics.length === 0) {
+container.innerHTML = "<span style='color:#ccc'>暂无热门话题</span>";
 return;
 }
 const maxCount = Math.max(...topics.map(t => t.count));
@@ -333,7 +362,11 @@ else if (ratio > 0.4) level = 2;
 else if (ratio > 0.25) level = 3;
 else if (ratio > 0.1) level = 4;
 else level = 5;
-return `<span class="tag tag-${level}">${t.name} (${t.count})</span>`;
+let title = '';
+if (t.includes && t.includes.length > 0) {
+title = ' title="包含: ' + t.includes.join('、') + '"';
+}
+return `<span class="tag tag-${level}"${title}>${t.name} (${t.count})</span>`;
 }).join("");
 }
 

@@ -7,7 +7,15 @@ import json
 import os
 import re
 from collections import Counter
-from datetime import datetime, date
+from datetime import datetime, timezone, timedelta
+
+CST = timezone(timedelta(hours=8))  # 北京时间
+
+def _now():
+    return datetime.now(CST)
+
+def _today():
+    return datetime.now(CST).date()
 
 ANALYTICS_FILE = "analytics_data.json"
 
@@ -58,9 +66,8 @@ def _save(data: dict):
 
 def cleanup_old_sessions(days: int = 30):
     """删除超过指定天数的旧会话数据"""
-    from datetime import timedelta
     data = _load()
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (_today() - timedelta(days=days)).isoformat()
     changed = False
     for user_id in list(data.get("users", {}).keys()):
         sessions = data["users"][user_id].get("sessions", [])
@@ -72,11 +79,38 @@ def cleanup_old_sessions(days: int = 30):
         _save(data)
 
 
+NEGATION_PREFIXES = {"不", "没", "别", "无", "非", "未", "莫", "不太", "不怎么", "没那么"}
+
+
+def _is_negated(text: str, pos: int) -> bool:
+    """检查 pos 位置的关键词是否被否定前缀修饰"""
+    for prefix in NEGATION_PREFIXES:
+        start = pos - len(prefix)
+        if start >= 0 and text[start:pos] == prefix:
+            return True
+    return False
+
+
+def _count_matches(text: str, words: set) -> int:
+    """统计文本中关键词命中次数，排除被否定前缀修饰的匹配"""
+    count = 0
+    for w in words:
+        idx = 0
+        while True:
+            idx = text.find(w, idx)
+            if idx == -1:
+                break
+            if not _is_negated(text, idx):
+                count += 1
+            idx += len(w)
+    return count
+
+
 def _analyze_emotion(text: str) -> str:
-    """分析单条消息的情绪（关键词兜底）"""
+    """分析单条消息的情绪（关键词兜底，含否定处理）"""
     text_lower = text.lower()
-    pos_score = sum(1 for w in POSITIVE_WORDS if w in text_lower)
-    neg_score = sum(1 for w in NEGATIVE_WORDS if w in text_lower)
+    pos_score = _count_matches(text_lower, POSITIVE_WORDS)
+    neg_score = _count_matches(text_lower, NEGATIVE_WORDS)
 
     if pos_score > neg_score:
         return "positive"
@@ -156,8 +190,8 @@ def record_message(user_id: str, role: str, content: str, analysis: dict | None 
         return
 
     data = _load()
-    today_str = date.today().isoformat()
-    now_str = datetime.now().strftime("%H:%M")
+    today_str = _today().isoformat()
+    now_str = _now().strftime("%H:%M")
 
     # 确保用户存在
     if user_id not in data["users"]:
@@ -203,7 +237,7 @@ def get_daily_frequency(user_id: str, days: int = 14) -> list[dict]:
     
     sessions = data["users"][user_id]["sessions"]
     # 只返回最近N天
-    cutoff = date.today().isoformat()
+    cutoff = _today().isoformat()
     # 按日期倒序取
     result = []
     for s in sorted(sessions, key=lambda x: x["date"], reverse=True)[:days]:
@@ -233,21 +267,68 @@ def get_emotion_stats(user_id: str, days: int = 14) -> dict:
     }
 
 
-def get_topic_stats(user_id: str, days: int = 14) -> list[dict]:
-    """获取话题统计（词云数据）"""
+def get_topic_stats(user_id: str, days: int = 7) -> list[dict]:
+    """获取话题统计（词云数据），仅统计最近 N 天"""
     data = _load()
     if user_id not in data["users"]:
         return []
-    
+
+    cutoff = (_today() - timedelta(days=days)).isoformat()
     topics = Counter()
     for s in data["users"][user_id]["sessions"]:
+        if s["date"] < cutoff:
+            continue
         for msg in s["messages"]:
             for t in msg["topics"]:
                 topics[t] += 1
-    
-    # 按出现次数降序排列
+
     result = [{"name": k, "count": v} for k, v in topics.most_common()]
     return result
+
+
+def consolidate_topics(user_id: str, days: int = 7) -> list[dict]:
+    """用 DeepSeek 将相近话题合并归类，返回精简后的话题列表"""
+    raw_topics = get_topic_stats(user_id, days=days)
+    if len(raw_topics) <= 5:
+        return raw_topics
+
+    topic_names = [t["name"] for t in raw_topics]
+    topic_list = "\n".join(f"- {name}" for name in topic_names)
+
+    try:
+        import requests
+        from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL
+
+        prompt = (
+            "你是一个话题整理助手。下面是一堆从聊天中提取的话题标签，很多意思相近但名称不同。\n"
+            "请把它们合并归类成5-8个大类，每个大类用一个2-4字的标签概括。\n"
+            "返回纯JSON数组（不要markdown，不要额外文字）：\n"
+            '[{"name": "大类名", "count": 合并后总数, "includes": ["原始话题1", "原始话题2"]}, ...]\n\n'
+            f"原始话题列表：\n{topic_list}"
+        )
+
+        resp = requests.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 512,
+            },
+            timeout=20,
+        )
+        result = resp.json()
+        raw = result["choices"][0]["message"]["content"]
+
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            consolidated = json.loads(m.group())
+            return sorted(consolidated, key=lambda x: x["count"], reverse=True)
+    except Exception as e:
+        print(f"[consolidate_topics] 失败: {e}")
+
+    return raw_topics
 
 
 def get_recent_emotions(user_id: str, n: int = 2) -> list[str]:
@@ -288,7 +369,6 @@ def get_user_summary(user_id: str) -> dict:
 
 import os
 import requests
-from datetime import date
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
@@ -306,7 +386,7 @@ def get_daily_stats(user_id: str) -> dict:
             "sentiment_negative": 0,
             "topics": {},
         }
-    today_str = date.today().isoformat()
+    today_str = _today().isoformat()
     today_session = None
     for s in data["users"][user_id]["sessions"]:
         if s["date"] == today_str:
@@ -344,7 +424,7 @@ def upload_stats(stats: dict):
         return False
 
     payload = {
-        "date": date.today().isoformat(),
+        "date": _today().isoformat(),
         "total_messages": stats.get("total_messages", 0),
         "session_count": stats.get("session_count", 0),
         "sentiment_positive": stats.get("sentiment_positive", 0),
@@ -373,12 +453,14 @@ def upload_stats(stats: dict):
         print(f"[upload_stats] [FAIL] 上传失败: {e}")
         return False
     
-def fetch_supabase_history(days: int = 30) -> list[dict]:
-    """从 Supabase 拉取历史统计数据"""
+def fetch_supabase_history(days: int | None = 30) -> list[dict]:
+    """从 Supabase 拉取历史统计数据。days=None 表示不限制条数。"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("[fetch_supabase] Supabase 未配置")
         return []
-    url = f"{SUPABASE_URL}/rest/v1/analytics?order=date.desc&limit={days}"
+    url = f"{SUPABASE_URL}/rest/v1/analytics?order=date.desc"
+    if days is not None:
+        url += f"&limit={days}"
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
