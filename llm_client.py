@@ -264,18 +264,21 @@ def assess_confidence(reply: str, user_message: str) -> bool:
     return _llm_confidence_check(reply, user_message)
 
 
-def extract_memories(user_message: str) -> list[dict]:
-    """从用户消息中提取值得记住的事实。只提取用户明确说出的信息，不碰AI回复。"""
+def extract_memories(user_message: str, reply: str = "") -> list[dict]:
+    """从对话中提取记忆。只提取用户明确说出的信息，AI回复仅供理解上下文。"""
+    context = ""
+    if reply:
+        context = f"许小熊的回复（仅供理解上下文，严禁从中提取记忆）：{reply[:200]}\n\n"
     prompt = (
-        "从用户消息中提取值得记住的具体事实。只提取用户明确说出的信息：\n"
-        "①用户对许小熊的设定/规则 ②用户和小多的共同回忆（去哪、做什么、约定）③用户纠正许小熊的错误。\n\n"
-        "规则：\n"
+        "从用户消息中提取值得记住的具体事实。\n"
+        "- 只提取用户明确说出的信息，严禁从许小熊的回复中提取\n"
+        "- 类别：①许小熊的设定/规则 ②小多和小豆的共同回忆 ③小豆纠正的错误\n"
         "- f必须是具体唯一标识（如\"哈尔滨雪翅膀\"），严禁分类标签\n"
         "- v是具体细节（≤25字）\n"
         "- 禁止记录：日期、情绪、元信息\n"
-        "- 无关闲聊不提取\n"
-        "- 没有值得记住的就返回空数组\n\n"
-        f"用户消息：{user_message}\n\n"
+        "- 无关闲聊不提取，没有值得记住的就返回空数组\n\n"
+        f"用户消息：{user_message}\n"
+        f"{context}"
         '返回JSON：{"m":[{"f":"事实名","v":"值"},...]} 无则{"m":[]}。只返回JSON。'
     )
     try:
