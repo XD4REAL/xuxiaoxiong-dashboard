@@ -7,7 +7,7 @@ except ImportError:
     pass
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 # Flask 密钥，用于 session
