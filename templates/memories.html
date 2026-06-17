@@ -48,9 +48,21 @@ body {
   gap: 12px;
 }
 .card-left { flex: 1; min-width: 0; }
-.card-fact { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; }
-.card-value { font-size: 13px; color: #666; word-break: break-all; }
-.card-source {
+.card-fact { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.card-fact .hot-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.hot-badge.l3 { background: #ffe0e0; color: #d63031; }
+.hot-badge.l2 { background: #fff3e0; color: #e17055; }
+.hot-badge.l1 { background: #e8f5e9; color: #388e3c; }
+.hot-badge.l0 { background: #f5f5f5; color: #aaa; }
+.card-meta {
+  display: flex;
+  gap: 12px;
   font-size: 11px;
   color: #bbb;
   margin-top: 4px;
@@ -93,13 +105,20 @@ async function load() {
   }
   empty.style.display = 'none';
   facts.forEach((f, i) => {
+    const act = f.activation || 0;
+    let level, badge;
+    if (act >= 10) { level = 'l3'; badge = '🔥 热门'; }
+    else if (act >= 5) { level = 'l2'; badge = '🔥 活跃'; }
+    else if (act >= 1) { level = 'l1'; badge = '🌱 温记忆'; }
+    else { level = 'l0'; badge = '❄️ 冷记忆'; }
+    const last = f.last_accessed ? '最近: ' + f.last_accessed : '从未访问';
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
       <div class="card-left">
-        <div class="card-fact">${esc(f.fact)}</div>
+        <div class="card-fact">${esc(f.fact)}<span class="hot-badge ${level}">${badge} ×${act}</span></div>
         <div class="card-value">${esc(f.value)}</div>
-        <div class="card-source">来源: ${esc(f.source)}</div>
+        <div class="card-meta"><span>来源: ${esc(f.source)}</span><span>${last}</span></div>
       </div>
       <button class="card-del" onclick="del(${i}, this)">删除</button>
     `;
