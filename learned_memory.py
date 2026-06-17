@@ -74,12 +74,8 @@ def _is_generic_fact_name(fact: str) -> bool:
     for kw in _GENERIC_KEYWORDS:
         if kw in fact:
             return True
-    # 2. "XX的XX" 结构 → 描述性短语，不是事实名
-    #    但允许 "的" 在开头/结尾的少量情况
-    de_pos = fact.find("的")
-    if de_pos > 0 and de_pos < len(fact) - 1:
-        # "的"在中间 → 描述性短语（"小豆喜欢的颜色"）
-        return True
+    # 2. "的" 检查：只拒绝纯描述性短语（如"共同回忆的"、"需要记住的"）
+    #    允许有具体主语的事实名（如"小豆喜欢的颜色"）
     if fact.endswith("的"):
         return True
     # 3. 太短
