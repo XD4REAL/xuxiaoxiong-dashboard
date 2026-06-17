@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ff9aa2">
+<title>聊天记录 - 许小熊</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #ededed;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.header {
+  background: #ff9aa2;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+.header-back {
+  font-size: 22px;
+  color: #333;
+  text-decoration: none;
+  width: 28px;
+  text-align: center;
+  cursor: pointer;
+}
+.header-title {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 600;
+  color: #222;
+}
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.date-list {
+  width: 120px;
+  background: #f5f5f5;
+  overflow-y: auto;
+  border-right: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+.date-list::-webkit-scrollbar { width: 3px; }
+.date-list::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.date-item {
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: background 0.15s;
+}
+.date-item:hover { background: #eee; }
+.date-item.active {
+  background: #ff9aa2;
+  color: #fff;
+  font-weight: 600;
+}
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #ededed;
+}
+.chat-area::-webkit-scrollbar { width: 4px; }
+.chat-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 15px;
+}
+.msg-time {
+  text-align: center;
+  font-size: 11px;
+  color: #999;
+  margin: 8px 0;
+}
+.msg-time span {
+  background: #d6d6d6;
+  padding: 2px 10px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  display: inline-block;
+}
+.message {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 88%;
+}
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+.message.bot  { align-self: flex-start; }
+.msg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.bubble {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.message.user .bubble {
+  background: #ff9aa2;
+  color: #333;
+  border-top-right-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+.message.bot .bubble {
+  background: #fff;
+  color: #333;
+  border-top-left-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+@media (max-width: 600px) {
+  .date-list { width: 90px; }
+  .date-item { padding: 12px 8px; font-size: 13px; }
+  .chat-area { padding: 12px; }
+  .message { max-width: 92%; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <a class="header-back" href="/">‹</a>
+  <div class="header-title">聊天记录</div>
+</div>
+
+<div class="main">
+  <div class="date-list" id="dateList">
+    <div class="date-item" style="color:#aaa;">加载中...</div>
+  </div>
+  <div class="chat-area" id="chatArea">
+    <div class="empty-state">← 点击日期查看聊天记录</div>
+  </div>
+</div>
+
+<script>
+const dateList = document.getElementById('dateList');
+const chatArea = document.getElementById('chatArea');
+const AVATAR_BOT = "{{ url_for('static', filename='avatar.jpg') }}";
+const AVATAR_USER = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E😊%3C/text%3E%3C/svg%3E";
+
+async function loadDates() {
+  try {
+    const res = await fetch('/api/history/dates');
+    const dates = await res.json();
+    dateList.innerHTML = '';
+    if (!dates.length) {
+      dateList.innerHTML = '<div class="date-item" style="color:#aaa;">暂无记录</div>';
+      return;
+    }
+    dates.forEach(d => {
+      const div = document.createElement('div');
+      div.className = 'date-item';
+      div.textContent = d.slice(5);
+      div.onclick = () => loadDate(d, div);
+      dateList.appendChild(div);
+    });
+  } catch (e) {
+    dateList.innerHTML = '<div class="date-item" style="color:#c00;">加载失败</div>';
+  }
+}
+
+async function loadDate(dateStr, el) {
+  document.querySelectorAll('.date-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+
+  try {
+    const res = await fetch('/api/history?date=' + dateStr);
+    const msgs = await res.json();
+    chatArea.innerHTML = '';
+    if (!msgs.length) {
+      chatArea.innerHTML = '<div class="empty-state">这天没有聊天记录</div>';
+      return;
+    }
+    msgs.forEach(msg => {
+      const role = msg.role === 'user' ? 'user' : 'bot';
+      const timeStr = (msg.time || '').slice(11, 16);
+
+      if (timeStr) {
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'msg-time';
+        timeDiv.innerHTML = '<span>' + timeStr + '</span>';
+        chatArea.appendChild(timeDiv);
+      }
+
+      const div = document.createElement('div');
+      div.className = 'message ' + role;
+      const avatar = document.createElement('img');
+      avatar.className = 'msg-avatar';
+      avatar.src = role === 'bot' ? AVATAR_BOT : AVATAR_USER;
+      avatar.onerror = function() {
+        this.src = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%2280%22 font-size=%2280%22%3E🧸%3C/text%3E%3C/svg%3E";
+      };
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = msg.content;
+
+      if (role === 'bot') {
+        div.appendChild(avatar);
+        div.appendChild(bubble);
+      } else {
+        div.appendChild(bubble);
+        div.appendChild(avatar);
+      }
+      chatArea.appendChild(div);
+    });
+    chatArea.scrollTop = 0;
+  } catch (e) {
+    chatArea.innerHTML = '<div class="empty-state" style="color:#c00;">加载失败，请重试</div>';
+  }
+}
+
+loadDates();
+</script>
+
+</body>
+</html>

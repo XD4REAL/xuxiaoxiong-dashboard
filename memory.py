@@ -1,5 +1,11 @@
 import json
 import os
+from datetime import datetime, timezone, timedelta
+
+CST = timezone(timedelta(hours=8))
+
+def _now_str():
+    return datetime.now(CST).strftime("%Y-%m-%d %H:%M")
 
 MEMORY_DIR = "chat_histories"
 
@@ -27,7 +33,7 @@ MAX_HISTORY = 200
 def add_message(user_id, role, content):
     """添加一条消息，超过上限自动裁剪旧消息"""
     history = load_history(user_id)
-    history.append({"role": role, "content": content})
+    history.append({"role": role, "content": content, "time": _now_str()})
     if len(history) > MAX_HISTORY:
         history = history[-MAX_HISTORY:]
     _ensure_dir()
@@ -52,3 +58,20 @@ def cleanup_old_histories(days: int = 30):
         if os.path.isfile(filepath) and filename.endswith(".json"):
             if os.path.getmtime(filepath) < cutoff:
                 os.remove(filepath)
+
+
+def get_dates_with_history(user_id: str) -> list[str]:
+    """返回有聊天记录的日期列表（倒序）"""
+    history = load_history(user_id)
+    dates = set()
+    for msg in history:
+        t = msg.get("time", "")
+        if t and len(t) >= 10:
+            dates.add(t[:10])
+    return sorted(dates, reverse=True)
+
+
+def get_messages_by_date(user_id: str, date_str: str) -> list[dict]:
+    """返回指定日期的所有消息"""
+    history = load_history(user_id)
+    return [msg for msg in history if msg.get("time", "").startswith(date_str)]

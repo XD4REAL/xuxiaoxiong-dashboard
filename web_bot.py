@@ -17,7 +17,7 @@ from config import SECRET_KEY
 from llm_client import chat, chat_stream, _parse_analysis, ALERT_KEYWORDS, extract_memories
 from alerts import save_alert, get_alerts, mark_read, mark_all_read, get_unread_count
 from email_notifier import send_alert
-from memory import load_history, add_message, cleanup_old_histories
+from memory import load_history, add_message, cleanup_old_histories, get_dates_with_history, get_messages_by_date
 from analytics import record_message, get_daily_frequency, get_emotion_stats, get_topic_stats, get_user_summary, get_daily_stats, upload_stats, fetch_supabase_history, cleanup_old_sessions, get_recent_emotions, consolidate_topics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -228,6 +228,31 @@ def dashboard_api(user_id):
         "emotion": get_emotion_stats(user_id),
         "topics": get_topic_stats(user_id),
     })
+
+
+@app.route("/history")
+def history_page():
+    """聊天历史页面"""
+    return render_template("history.html")
+
+
+@app.route("/api/history/dates")
+def history_dates_api():
+    """返回有聊天记录的日期列表"""
+    user_id = session.get("user_id", "xiaodou")
+    dates = get_dates_with_history(user_id)
+    return jsonify(dates)
+
+
+@app.route("/api/history")
+def history_api():
+    """返回指定日期的聊天消息"""
+    date = request.args.get("date", "")
+    if not date:
+        return jsonify({"error": "缺少 date 参数"}), 400
+    user_id = session.get("user_id", "xiaodou")
+    messages = get_messages_by_date(user_id, date)
+    return jsonify(messages)
 
 
 @app.route("/api/stats")
