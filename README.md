@@ -1,4 +1,4 @@
-# 许小熊 Bot v1.4.5
+# 许小熊 Bot v1.5
 
 小多的数字分身 — 一个用 DeepSeek 驱动的陪伴型聊天机器人，为小豆而生 OvO
 
@@ -116,6 +116,9 @@ pyinstaller 许小熊.spec
 | `GET /api/alerts` | 求助事件列表 |
 | `POST /api/alerts/read` | 标记求助已读 |
 | `GET /api/alerts/count` | 未读求助数量 |
+| `GET /history` | 聊天历史页面 |
+| `GET /api/history/dates` | 有记录的日期列表 |
+| `GET /api/history?date=YYYY-MM-DD` | 某天聊天记录 |
 
 ## 技术栈
 
@@ -126,6 +129,11 @@ pyinstaller 许小熊.spec
 - **打包**: PyInstaller
 
 ## 更新日志
+
+### v1.5 (2026-06-17)
+
+- **聊天历史回看** — 新增 `/history` 页面，按日期浏览历史对话，聊天气泡样式一致
+- 消息新增时间戳字段，支持按日期 API 查询
 
 ### v1.4.5 (2026-06-16)
 
