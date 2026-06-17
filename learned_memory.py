@@ -263,9 +263,35 @@ def build_memory_context(user_message: str = "", max_facts: int = 8) -> str:
             if not selected:
                 selected = facts[-3:]
 
-    lines = ["\n【我记住的事情（与小豆的当前话题相关）】"]
-    for f in selected:
-        lines.append(f"- {f['fact']}：{f['value']}")
+            # === 分层注入：L0 热记忆（固定） + L1 话题记忆（按需） ===
+            L0_MAX = 3
+            L1_MAX = 5
+
+            # L0：activation >= 3 的热记忆，按 activation 降序
+            hot = [f for f in facts if (f.get("activation", 0) or 0) >= 3]
+            hot.sort(key=lambda f: f.get("activation", 0), reverse=True)
+            l0_facts = hot[:L0_MAX]
+
+            # L1：关键词匹配到的，排除已在 L0 中的
+            l0_names = {f["fact"] for f in l0_facts}
+            l1_facts = [f for f in selected if f["fact"] not in l0_names][:L1_MAX]
+
+            lines = []
+            if l0_facts:
+                lines.append("\n【核心记忆（始终记住）】")
+                for f in l0_facts:
+                    lines.append(f"- {f['fact']}：{f['value']}")
+            if l1_facts:
+                lines.append("\n【相关记忆（当前话题）】")
+                for f in l1_facts:
+                    lines.append(f"- {f['fact']}：{f['value']}")
+            if not lines:
+                lines.append("\n【相关记忆】")
+
+    # 无 user_message 时用旧格式
     if not user_message:
+        lines = ["\n【我记住的事情（与小豆的当前话题相关）】"]
+        for f in selected:
+            lines.append(f"- {f['fact']}：{f['value']}")
         lines.append("（以上是小豆纠正/教过我的内容。如果和系统提示词有矛盾以这里为准，内部有矛盾以排后面的为准。）")
     return "\n".join(lines)
