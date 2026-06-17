@@ -124,7 +124,7 @@ def save_llm_memories(memories: list[dict]):
             continue
         if len(fact) < 3 or len(fact) > 12:
             continue
-        if len(value) < 4 or len(value) > 60:
+        if len(value) < 2 or len(value) > 60:
             continue
         # LLM 偷懒：直接复制 value 作为 fact
         if fact == value:
@@ -161,9 +161,9 @@ def detect_and_save_corrections(user_message: str) -> bool:
         add_fact(remember_match.group(1), remember_match.group(2), source="user_command")
         return True
 
-    # 模式2：纠正 — "不对/不是/记错了/记混了，xxx是yyy"
+    # 模式2：纠正 — "不对/不是/记错了/记混了...xxx是yyy"（允许中间有语气词）
     correction_match = re.search(
-        r"(不对|不是|错了|记错了|记混了)[，,。.\s](.+?)(?:是|为)(\S+)",
+        r"(不对|不是|错了|记错了|记混了).*?[，,。.\s](.+?)(?:是|为)(\S+)",
         msg
     )
     if correction_match:
