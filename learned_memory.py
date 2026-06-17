@@ -41,6 +41,8 @@ def add_fact(fact: str, value: str, source: str = "auto"):
         "fact": fact,
         "value": value,
         "source": source,
+        "activation": 0,
+        "last_accessed": None,
     })
     if len(data["facts"]) > MAX_FACTS:
         data["facts"] = data["facts"][-MAX_FACTS:]
@@ -201,24 +203,63 @@ def build_memory_context(user_message: str = "", max_facts: int = 8) -> str:
         if not keywords:
             selected = facts[-max_facts:]
         else:
-            # 对每条事实打分
+            # 对每条事实打分（关键词 + activation - 时间衰减）
+            from datetime import date as _date
+            today_str = _date.today().isoformat()
             scored = []
             for f in facts:
                 text = f["fact"] + f["value"]
-                score = 0
+                kw_score = 0
                 for kw in keywords:
                     if kw in text:
-                        score += 1
-                    # 部分匹配（>=2字的子串）
+                        kw_score += 1
                     if len(kw) >= 2:
                         for i in range(len(kw) - 1):
                             sub = kw[i:i+2]
                             if sub in text:
-                                score += 0.3
-                if score > 0:
-                    scored.append((score, f))
+                                kw_score += 0.3
+
+                # activation 加成
+                act = f.get("activation", 0) or 0
+                act_bonus = act * 0.3
+
+                # 时间衰减
+                last = f.get("last_accessed")
+                days_since = 0
+                if last:
+                    try:
+                        delta = _date.today() - _date.fromisoformat(last)
+                        days_since = delta.days
+                    except (ValueError, TypeError):
+                        pass
+                decay = days_since * 0.01
+
+                total = kw_score + act_bonus - decay
+                if total > 0:
+                    scored.append((total, f, kw_score > 0))
+
             scored.sort(key=lambda x: x[0], reverse=True)
-            selected = [f for _, f in scored[:max_facts]]
+            selected = []
+            accessed_ids = []
+            for _, f, was_matched in scored[:max_facts]:
+                selected.append(f)
+                if was_matched:
+                    accessed_ids.append(f["fact"])
+
+            # 回写 activation：匹配到的 +1，更新 last_accessed
+            if accessed_ids:
+                for f in facts:
+                    if f["fact"] in accessed_ids:
+                        f["activation"] = min((f.get("activation", 0) or 0) + 1, 50)
+                        f["last_accessed"] = today_str
+                data = _load()
+                for existing in data["facts"]:
+                    for updated in facts:
+                        if existing["fact"] == updated["fact"]:
+                            existing["activation"] = updated.get("activation", 0)
+                            existing["last_accessed"] = updated.get("last_accessed")
+                _save(data)
+
             if not selected:
                 selected = facts[-3:]
 
