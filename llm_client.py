@@ -55,10 +55,8 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     # 附加分析任务指令（模型会在回复末尾输出结构化分析，程序自动移除）
     analysis_instruction = (
         "\n\n【分析任务】每条回复结尾附加一行JSON："
-        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]},"_m":[{"f":"事实名","v":"值"},...]}'
-        "\n- emotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词"
-        "\n- _m：从用户消息中提取值得记住的事实（f≤6字，v≤25字），无关闲聊填空数组[]"
-        "\n- 只提取用户明确说出的信息，严禁从自己的回复中提取"
+        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}}'
+        "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
     )
     system_content += analysis_instruction
 
@@ -320,6 +318,12 @@ def extract_memories(user_message: str, reply: str = "") -> list[dict]:
         raw = data["choices"][0]["message"]["content"].strip()
         parsed = json.loads(raw)
         items = parsed.get("m", [])
-        return [{"f": m["f"].strip(), "v": m["v"].strip()} for m in items if m.get("f") and m.get("v")]
-    except Exception:
+        result = [{"f": m["f"].strip(), "v": m["v"].strip()} for m in items if m.get("f") and m.get("v")]
+        if result:
+            import logging
+            logging.getLogger(__name__).info(f"[extract_memories] 提取到 {len(result)} 条记忆: {result}")
+        return result
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[extract_memories] 失败: {e}")
         return []
