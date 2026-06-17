@@ -104,8 +104,10 @@ def chat_api():
         add_message(user_id, "assistant", reply)
         record_message(user_id, "user", user_message, analysis=analysis)
 
-        # 保存 LLM 提取的记忆
+        # 保存 LLM 提取的记忆（主请求内联 + 独立提取双保险）
         from learned_memory import save_llm_memories
+        if memories:
+            save_llm_memories(memories)
         save_llm_memories(extract_memories(user_message, reply))
 
         # 求助检测（必须在 upload_stats 之前，避免编码异常阻断）
@@ -159,6 +161,8 @@ def chat_stream_api():
                     add_message(user_id, "assistant", clean_reply)
                     record_message(user_id, "user", user_message, analysis=analysis)
                     from learned_memory import save_llm_memories
+                    if memories:
+                        save_llm_memories(memories)
                     save_llm_memories(extract_memories(user_message, clean_reply))
                     _check_and_alert(user_id, user_message, clean_reply, analysis=analysis)
                     stats = get_daily_stats(user_id)

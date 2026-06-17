@@ -55,8 +55,10 @@ def build_messages(history: list[dict], user_message: str) -> list[dict]:
     # 附加分析任务指令（模型会在回复末尾输出结构化分析，程序自动移除）
     analysis_instruction = (
         "\n\n【分析任务】每条回复结尾附加一行JSON："
-        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]}}'
-        "\nemotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词。"
+        '{"_a":{"e":"positive/neutral/negative","c":"high/low","t":["话题1","话题2"]},"_m":[{"f":"事实名","v":"值"},...]}'
+        "\n- emotion分析用户情绪，confidence评估你的回答把握度，topics提取2-4个话题关键词"
+        "\n- _m：从用户消息中提取值得记住的事实（f≤6字，v≤25字），无关闲聊填空数组[]"
+        "\n- 只提取用户明确说出的信息，严禁从自己的回复中提取"
     )
     system_content += analysis_instruction
 
@@ -93,11 +95,24 @@ def _post_with_retry(url, headers, json, timeout, max_retries=1):
     return resp
 
 
+import re as _re_mod
+
+_PAREN_RE = _re_mod.compile(r"（[^）]*）")
+
+
+def _strip_parens(text: str) -> str:
+    """移除中文括号内容（如 （歪着头）（眨眨眼）），并清理多余空行"""
+    text = _PAREN_RE.sub("", text)
+    # 合并连续换行
+    text = _re_mod.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def _parse_analysis(raw: str) -> tuple[str, dict | None, list | None]:
     """从回复文本中提取分析数据和记忆，返回 (纯净回复, 分析dict或None, 记忆list或None)"""
     start = raw.rfind('{"_a":')
     if start < 0:
-        return raw, None, None
+        return _strip_parens(raw), None, None
 
     brace_count = 0
     end = -1

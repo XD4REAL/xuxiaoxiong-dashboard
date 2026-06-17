@@ -155,8 +155,8 @@ def detect_and_save_corrections(user_message: str) -> bool:
     """
     msg = user_message.strip()
 
-    # 模式1：显示记住指令 — "记住：xxx是yyy" 或 "记住，xxx是yyy"
-    remember_match = re.search(r"记住[：:，,]\s*(\S+?)是(\S+)", msg)
+    # 模式1：显示记住指令 — "记住...xxx是yyy"（允许中间有任意文字）
+    remember_match = re.search(r"记住.*?[：:，,]\s*(\S+?)是(\S+)", msg)
     if remember_match:
         add_fact(remember_match.group(1), remember_match.group(2), source="user_command")
         return True
