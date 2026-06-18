@@ -18,6 +18,7 @@ from llm_client import chat, chat_stream, _parse_analysis, ALERT_KEYWORDS, extra
 from alerts import save_alert, get_alerts, mark_read, mark_all_read, get_unread_count
 from email_notifier import send_alert
 from memory import load_history, add_message, cleanup_old_histories, get_dates_with_history, get_messages_by_date
+from greeting import get_greeting
 from analytics import record_message, get_daily_frequency, get_emotion_stats, get_topic_stats, get_user_summary, get_daily_stats, upload_stats, fetch_supabase_history, cleanup_old_sessions, get_recent_emotions, consolidate_topics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -232,6 +233,18 @@ def dashboard_api(user_id):
         "emotion": get_emotion_stats(user_id),
         "topics": get_topic_stats(user_id),
     })
+
+
+@app.route("/api/greeting")
+def greeting_api():
+    """返回场景匹配的主动问候"""
+    user_id = session.get("user_id", "xiaodou")
+    try:
+        greeting = get_greeting(user_id)
+        return jsonify({"greeting": greeting})
+    except Exception as e:
+        logger.warning(f"Greeting failed: {e}")
+        return jsonify({"greeting": "想你啦！"})
 
 
 @app.route("/history")
