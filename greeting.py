@@ -56,7 +56,7 @@ LLM_SYSTEM_PROMPT = (
 )
 
 
-def _llm_greet(context: str) -> str | None:
+def _llm_greet(context):
     """调用 DeepSeek 生成个性化问候，失败返回 None"""
     try:
         resp = requests.post(
@@ -77,7 +77,7 @@ def _llm_greet(context: str) -> str | None:
         text = data["choices"][0]["message"]["content"].strip()
         if text and len(text) <= 100:
             return text
-    except Exception:
+    except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError):
         pass
     return None
 
@@ -102,7 +102,7 @@ def _last_chat_date(user_id: str) -> str | None:
     return None
 
 
-def _detect_scene(user_id: str) -> tuple[str, dict | None]:
+def _detect_scene(user_id):
     """检测场景，返回 (scene_type, context_dict_or_none)
 
     scene_type: 'anniversary' | 'reunion' | 'time_period' | 'default'
@@ -166,10 +166,7 @@ def get_greeting(user_id: str = "xiaodou") -> str:
         if llm_result:
             return llm_result
 
-    # 模板路径
-    if scene == "time_period" and ctx:
-        pool = TEMPLATES.get(ctx["period"], TEMPLATES["default"])
-    else:
-        pool = TEMPLATES["default"]
+    # 模板路径（scene 必定是 time_period，兜底用 default）
+    pool = TEMPLATES.get(ctx["period"], TEMPLATES["default"]) if ctx else TEMPLATES["default"]
 
     return random.choice(pool)
